@@ -1,0 +1,139 @@
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Fira Code", ui-monospace, monospace;
+  --font-heading: "Share Tech Mono", ui-monospace, monospace;
+  --font-mono: "Share Tech Mono", ui-monospace, monospace;
+
+  /* Cosmic dark base */
+  --color-background: #0f0f23;
+  --color-foreground: #e2e8f0;
+  --color-muted: #1a1740;
+  --color-muted-foreground: #9d8ad6;
+  --color-border: rgba(167, 139, 250, 0.25);
+
+  /* Brand: lime monster hero */
+  --color-primary: #a3e635;
+  --color-on-primary: #0b0b1a;
+
+  /* Aliens — violet */
+  --color-secondary: #7c3aed;
+  --color-secondary-foreground: #ffffff;
+  --color-secondary-light: #a78bfa;
+
+  /* Danger / boss — rose */
+  --color-destructive: #f43f5e;
+  --color-destructive-light: #fb7185;
+
+  /* Organisms / shield — cyan */
+  --color-accent: #22d3ee;
+  --color-accent-foreground: #0b0b1a;
+
+  /* Power-up */
+  --color-warning: #fbbf24;
+
+  --color-ring: #a78bfa;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Glow text helper */
+.text-glow-primary { text-shadow: 0 0 14px rgba(163, 230, 53, 0.7); }
+.text-glow-secondary { text-shadow: 0 0 14px rgba(124, 58, 237, 0.7); }
+.text-glow-rose { text-shadow: 0 0 14px rgba(244, 63, 94, 0.7); }
+
+/* Translucent HUD panel */
+.hud-panel {
+  background: rgba(20, 16, 48, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+}
+
+/* Gradient title */
+.title-gradient {
+  background: linear-gradient(180deg, #ede9fe 0%, #a78bfa 45%, #7c3aed 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 32px rgba(124, 58, 237, 0.5));
+}
+.title-gradient-rose {
+  background: linear-gradient(180deg, #ffe4ec, #fb7185 50%, #f43f5e);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 32px rgba(244, 63, 94, 0.5));
+}
+
+/* Rise animation */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-rise { animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-pulse-soft { animation: pulse-soft 1.2s ease-in-out infinite; }
+
+/* Vignette overlay */
+.vignette {
+  background: radial-gradient(120% 120% at 50% 45%, transparent 52%, rgba(6, 6, 20, 0.6) 100%);
+  mix-blend-mode: multiply;
+}
+
+/* Keycap */
+.keycap {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  color: #dcd0ff;
+  background: rgba(30, 22, 64, 0.8);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-bottom-width: 3px;
+  border-radius: 9px;
+  padding: 8px 12px;
+  letter-spacing: 0.06em;
+}
+
+/* CTA */
+.cta {
+  font-family: var(--font-heading);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 16px;
+  color: #fff;
+  padding: 16px 42px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fb7185, #f43f5e);
+  box-shadow: 0 10px 30px rgba(244, 63, 94, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: transform 0.15s, box-shadow 0.2s;
+  cursor: pointer;
+  border: 0;
+}
+.cta:hover { transform: translateY(-2px); box-shadow: 0 16px 42px rgba(244, 63, 94, 0.6); }
+.cta:active { transform: translateY(0); }
+.cta:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.cta-secondary {
+  background: linear-gradient(180deg, #a78bfa, #7c3aed);
+  box-shadow: 0 10px 30px rgba(124, 58, 237, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.cta-secondary:hover { box-shadow: 0 16px 42px rgba(124, 58, 237, 0.6); }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise, .animate-pulse-soft { animation: none; }
+}
