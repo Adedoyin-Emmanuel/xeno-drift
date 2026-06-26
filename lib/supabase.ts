@@ -3,9 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://ulpybonhetptxjocylrt.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_cuhOWwp-SQ8QhG-vnpvwSA_DxIQSTIY";
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  realtime: { params: { eventsPerSecond: 10 } },
-});
+export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 export type Player = {
   id: string;

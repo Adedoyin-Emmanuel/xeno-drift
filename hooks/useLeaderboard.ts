@@ -1,152 +1,69 @@
-import { useEffect, useState } from "react";
-import { supabase, type Player } from "../lib/supabase";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { supabase } from "../lib/supabase";
 
-export type LeaderboardEntry = Pick<Player, "id" | "username" | "best_score" | "best_wave" | "games_played">;
+export type LeaderboardEntry = {
+  username: string;
+  kills: number;
+  games: number;
+  best: number;
+};
 
-/**
- * Subscribes to the players table and keeps a live, sorted top-N list of best
- * scores. Updates as soon as anyone in the world finishes a game.
- */
-export function useLeaderboard(limit: number = 10) {
+function mapRow(row: any): LeaderboardEntry {
+  return {
+    username: row.username ?? "???",
+    kills: row.total_kills ?? 0,
+    games: row.games_played ?? 0,
+    best: row.best_score ?? 0,
+  };
+}
+
+export function useLeaderboard() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const tickRef = useRef(0);
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("players")
+      .select("username,total_kills,games_played,best_score")
+      .order("total_kills", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error("leaderboard fetch", error);
+      setEntries([]);
+    } else {
+      setEntries((data ?? []).map(mapRow));
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    load();
+    const id = setInterval(() => {
+      load();
+      tickRef.current++;
+    }, 5000);
 
-    const fetchTop = async () => {
-      const { data, error } = await supabase
-        .from("players")
-        .select("id, username, best_score, best_wave, games_played")
-        .order("best_score", { ascending: false })
-        .limit(limit);
-      if (cancelled) return;
-      if (error) {
-        console.error("leaderboard fetch", error);
-        setLoading(false);
-        return;
-      }
-      setEntries((data ?? []) as LeaderboardEntry[]);
-      setLoading(false);
-    };
-    fetchTop();
-
-    const channel = supabase
-      .channel("public:players:leaderboard")
+    const chan = supabase
+      .channel("lb-poll")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "players" },
-        () => {
-          fetchTop();
-        }
+        () => load()
       )
       .subscribe();
 
     return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
+      clearInterval(id);
+      supabase.removeChannel(chan);
     };
-  }, [limit]);
+  }, [load]);
 
-  return { entries, loading };
-}
+  const refresh = useCallback(() => {
+    setLoading(true);
+    load();
+  }, [load]);
 
-/**
- * Subscribes to every new score row submitted globally — used to render a live
- * "recent games" ticker so it feels like a multiplayer world.
- */
-export type RecentScore = {
-  id: string;
-  username: string;
-  score: number;
-  wave: number;
-  created_at: string;
-};
-
-export function useRecentScores(limit: number = 8) {
-  const [scores, setScores] = useState<RecentScore[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchRecent = async () => {
-      const { data } = await supabase
-        .from("scores")
-        .select("id, username, score, wave, created_at")
-        .order("created_at", { ascending: false })
-        .limit(limit);
-      if (cancelled) return;
-      if (data) setScores(data as RecentScore[]);
-    };
-    fetchRecent();
-
-    const channel = supabase
-      .channel("public:scores:recent")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "scores" },
-        (payload) => {
-          const row = payload.new as RecentScore;
-          setScores((prev) => [row, ...prev].slice(0, limit));
-        }
-      )
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
-    };
-  }, [limit]);
-  return scores;
-}
-
-// ---------- Co-op ----------
-export type CoopEntry = {
-  id: string;
-  room_code: string;
-  host_username: string;
-  guest_username: string;
-  score: number;
-  wave: number;
-  created_at: string;
-};
-
-export function useCoopLeaderboard(limit: number = 10) {
-  const [entries, setEntries] = useState<CoopEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchTop = async () => {
-      const { data, error } = await supabase
-        .from("coop_leaderboard")
-        .select("id, room_code, host_username, guest_username, score, wave, created_at")
-        .order("score", { ascending: false })
-        .limit(limit);
-      if (cancelled) return;
-      if (error) {
-        console.error("coop leaderboard fetch", error);
-        setLoading(false);
-        return;
-      }
-      setEntries((data ?? []) as CoopEntry[]);
-      setLoading(false);
-    };
-    fetchTop();
-
-    const channel = supabase
-      .channel("public:coop_leaderboard:top")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "coop_leaderboard" },
-        () => { fetchTop(); }
-      )
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
-    };
-  }, [limit]);
-
-  return { entries, loading };
+  return { entries, loading, refresh, tick: tickRef.current };
 }

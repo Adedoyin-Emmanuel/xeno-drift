@@ -19,37 +19,37 @@ import {
   signInOrCreate,
   submitGameResult,
   type StoredPlayer,
+  type GameResult,
 } from "./lib/player";
 import { supabase, type Player } from "./lib/supabase";
 import {
+  initMusic,
+  playMusic,
+  restartMusic,
+  pauseMusic,
+  resumeMusic,
+  duckMusic,
+} from "./lib/sounds";
+import {
   createHostRoom,
   joinGuestRoom,
-  submitCoopResult,
   type CoopSnapshot,
   type HostHandle,
   type GuestHandle,
 } from "./lib/realtime";
 
-type GameResult = { score: number; wave: number; kills: number };
-type Screen =
-  | "playing"          // engine drives UI (menu/playing/paused/over)
-  | "mp-choice"        // multiplayer modal
-  | "mp-host-lobby"    // host waiting / countdown
-  | "mp-guest-lobby";  // guest entering code / waiting / countdown
+type Screen = "playing" | "mp-choice" | "mp-host-lobby" | "mp-guest-lobby";
 
 const INITIAL_STATE: PublicState = {
   state: "menu",
   score: 0,
-  wave: 1,
-  kills: 0,
   hp: 100,
   maxHp: 100,
   dashCd: 0,
   dashMax: 1.4,
-  combo: 1,
-  buffs: { shield: 0, rapid: 0, spread: 0 },
-  boss: null,
   muted: false,
+  wave: 0,
+  kills: 0,
 };
 
 export default function App() {
@@ -59,9 +59,7 @@ export default function App() {
   const [hydrating, setHydrating] = useState(true);
   const [result, setResult] = useState<GameResult | null>(null);
   const [savingResult, setSavingResult] = useState(false);
-  const [isNewBest, setIsNewBest] = useState(false);
 
-  // Multiplayer state
   const [screen, setScreen] = useState<Screen>("playing");
   const [mode, setMode] = useState<"solo" | "host" | "guest">("solo");
   const [roomCode, setRoomCode] = useState<string | null>(null);
@@ -73,7 +71,6 @@ export default function App() {
   const hostHandleRef = useRef<HostHandle | null>(null);
   const guestHandleRef = useRef<GuestHandle | null>(null);
   const inputPumpRef = useRef<number | null>(null);
-  // Stable refs for values used inside long-lived realtime callbacks.
   const guestNameRef = useRef<string | null>(null);
   const countdownStartedRef = useRef(false);
   const modeRef = useRef<"solo" | "host" | "guest">("solo");
@@ -90,98 +87,75 @@ export default function App() {
       .eq("id", stored.id)
       .maybeSingle()
       .then(({ data }) => {
-        if (data) {
-          setPlayer({ ...stored, ...(data as Player) });
-        } else {
-          setPlayer(stored);
-        }
+        if (data) setPlayer({ ...stored, ...(data as Player) });
+        else setPlayer(stored);
         setHydrating(false);
       });
   }, []);
 
-  const handleEngineState = useCallback((s: PublicState) => {
-    setGameState(s);
+  useEffect(() => {
+    initMusic();
+    playMusic();
   }, []);
 
-  // ---- Solo game over ----
-  const handleSoloGameOver = useCallback(
+  const handleDuckMusic = useCallback((active: boolean) => {
+    duckMusic(active);
+  }, []);
+
+  const handleEngineState = useCallback((s: PublicState) => setGameState(s), []);
+
+  const handleGameOver = useCallback(
     async (r: GameResult) => {
       setResult(r);
       if (!player) return;
-      setSavingResult(true);
-      const prevBest = player.best_score ?? 0;
-      try {
-        const updated = await submitGameResult(player, r);
-        if (updated) {
-          setPlayer({ ...player, ...updated });
+      if (modeRef.current === "host" || modeRef.current === "solo") {
+        setSavingResult(true);
+        try {
+          const updated = await submitGameResult(player, r);
+          if (updated) setPlayer({ ...player, ...updated });
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setSavingResult(false);
         }
-        setIsNewBest(r.score > prevBest);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setSavingResult(false);
       }
     },
     [player]
   );
 
-  // ---- Co-op host game over ----
-  const handleCoopHostGameOver = useCallback(
-    async (r: GameResult) => {
-      setResult(r);
-      if (!player) return;
-      const code = roomCode ?? "";
-      const gName = guestName ?? "unknown";
-      setSavingResult(true);
-      try {
-        await submitCoopResult({
-          roomCode: code,
-          hostUsername: player.username,
-          guestUsername: gName,
-          score: r.score,
-          wave: r.wave,
-          kills: r.kills,
-        });
-      } finally {
-        setSavingResult(false);
-      }
-    },
-    [player, roomCode, guestName]
-  );
-
-  const handleGameOver = useCallback(
-    (r: GameResult) => {
-      if (mode === "host") handleCoopHostGameOver(r);
-      else if (mode === "guest") {
-        // Guest doesn't submit (host does). Just store the result for the overlay.
-        setResult(r);
-      } else {
-        handleSoloGameOver(r);
-      }
-    },
-    [mode, handleSoloGameOver, handleCoopHostGameOver]
-  );
-
-  // ---- Snapshot routing ----
   const handleSnapshot = useCallback((s: CoopSnapshot) => {
-    if (modeRef.current !== "host") return;
+    if (modeRef.current !== "host" && modeRef.current !== "solo") return;
     hostHandleRef.current?.send({ type: "snapshot", s });
   }, []);
-  // ---- Solo start ----
-  const handleStart = useCallback(() => {
+
+  const handlePractice = useCallback(() => {
     setResult(null);
-    setIsNewBest(false);
     setMode("solo");
     modeRef.current = "solo";
     engineRef.current?.setMode("solo", "");
     engineRef.current?.start();
+    restartMusic();
   }, []);
 
   const handlePause = useCallback(() => engineRef.current?.pause(), []);
   const handleResume = useCallback(() => engineRef.current?.resume(), []);
+
+  const handleGoToMenu = useCallback(() => {
+    engineRef.current?.goToMenu();
+    cleanupMultiplayer();
+    restartMusic();
+  }, []);
+
   const handleToggleMute = useCallback(() => {
     const e = engineRef.current;
-    if (e) e.setMuted(!e.isMuted());
+    if (e) {
+      e.setMuted(!e.isMuted());
+      if (e.isMuted()) {
+        pauseMusic();
+      } else {
+        resumeMusic();
+      }
+    }
   }, []);
 
   const handleSignIn = useCallback(async (username: string) => {
@@ -194,10 +168,10 @@ export default function App() {
     clearStoredPlayer();
     setPlayer(null);
     setResult(null);
-    setIsNewBest(false);
+    setScreen("playing");
+    cleanupMultiplayer();
   }, []);
 
-  // ---- Multiplayer: host flow ----
   const startCountdownThenPlay = useCallback(() => {
     let value = 3;
     setCountdown(value);
@@ -209,7 +183,6 @@ export default function App() {
       if (value > 0) {
         setTimeout(tick, 1000);
       } else {
-        // GO!
         setTimeout(() => {
           setCountdown(null);
           setScreen("playing");
@@ -218,6 +191,7 @@ export default function App() {
           engineRef.current?.setMode("host", gName);
           modeRef.current = "host";
           engineRef.current?.start();
+          restartMusic();
         }, 700);
       }
     };
@@ -244,7 +218,7 @@ export default function App() {
           setGuestName(null);
         },
         onInput: (i) => {
-          engineRef.current?.setRemoteInput(i.mvx, i.mvy, i.dash);
+          engineRef.current?.setRemoteInput(i.mvx, i.mvy, i.dash, i.aim);
         },
       });
       hostHandleRef.current = handle;
@@ -261,55 +235,53 @@ export default function App() {
     }
   }, [player, startCountdownThenPlay]);
 
-  // ---- Multiplayer: guest flow ----
-  const joinAsGuest = useCallback(async (code: string) => {
-    if (!player) return;
-    setJoinError(null);
-    setGuestStatus("connecting");
-    try {
-      const handle = await joinGuestRoom(code, {
-        onWelcome: (hName) => {
-          setHostName(hName);
-          setGuestStatus("waiting");
-          // Tell the engine who the partner is so HUD shows the right label
-          engineRef.current?.setMode("guest", hName);
-        },
-        onSnapshot: (s) => {
-          // If we were in lobby and the game has started, swap to playing screen
-          setScreen((cur) => (cur === "mp-guest-lobby" && s.state === "playing" ? "playing" : cur));
-          engineRef.current?.applySnapshot(s);
-          if (s.state === "over") {
-            // Game over from host
-            setResult({ score: s.score, wave: s.wave, kills: s.kills });
-          }
-        },
-        onCountdown: (v) => setCountdown(v),
-        onHostLeave: () => {
-          setJoinError("Host left the room.");
-          cleanupMultiplayer();
-          setScreen("playing");
-        },
-      });
-      guestHandleRef.current = handle;
-      setMode("guest");
-      modeRef.current = "guest";
-      setRoomCode(code);
-      setGuestName(player.username);
-      setHostName(null);
-      setCountdown(null);
-      engineRef.current?.setMode("guest", "");
-      // Say hello to the host with our name
-      handle.send({ type: "hello", username: player.username });
-      setGuestStatus("waiting");
-    } catch (e) {
-      console.error(e);
-      setGuestStatus("input");
-      setJoinError("Couldn't join that room. Check the code.");
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [player]);
+  const joinAsGuest = useCallback(
+    async (code: string) => {
+      if (!player) return;
+      setJoinError(null);
+      setGuestStatus("connecting");
+      try {
+        const handle = await joinGuestRoom(code, {
+          onWelcome: (hName) => {
+            setHostName(hName);
+            setGuestStatus("waiting");
+            engineRef.current?.setMode("guest", hName);
+          },
+          onSnapshot: (s) => {
+            setScreen((cur) =>
+              cur === "mp-guest-lobby" && s.state === "playing" ? "playing" : cur
+            );
+            engineRef.current?.applySnapshot(s);
+            if (s.state === "over") {
+              setResult({ score: s.guest.score, wave: s.wave, kills: s.guest.score });
+            }
+          },
+          onCountdown: (v) => setCountdown(v),
+          onHostLeave: () => {
+            setJoinError("Host left the room.");
+            cleanupMultiplayer();
+            setScreen("playing");
+          },
+        });
+        guestHandleRef.current = handle;
+        setMode("guest");
+        modeRef.current = "guest";
+        setRoomCode(code);
+        setGuestName(player.username);
+        setHostName(null);
+        setCountdown(null);
+        engineRef.current?.setMode("guest", "");
+        handle.send({ type: "hello", username: player.username });
+        setGuestStatus("waiting");
+      } catch (e) {
+        console.error(e);
+        setGuestStatus("input");
+        setJoinError("Could not join that room. Check the code.");
+      }
+    },
+    [player]
+  );
 
-  // ---- Cleanup ----
   function cleanupMultiplayer() {
     if (inputPumpRef.current !== null) {
       window.clearInterval(inputPumpRef.current);
@@ -342,7 +314,6 @@ export default function App() {
     setResult(null);
   }, []);
 
-  // ---- Guest input pump: 30Hz ----
   useEffect(() => {
     if (mode !== "guest") return;
     const id = window.setInterval(() => {
@@ -350,7 +321,7 @@ export default function App() {
       const handle = guestHandleRef.current;
       if (!eng || !handle) return;
       const i = eng.consumeLocalInput();
-      handle.send({ type: "input", i: { ...i, ts: Date.now() } });
+      handle.send({ type: "input", i: { mvx: i.mvx, mvy: i.mvy, dash: i.dash, aim: i.aim, fire: true, ts: Date.now() } });
     }, 33);
     inputPumpRef.current = id;
     return () => {
@@ -359,7 +330,6 @@ export default function App() {
     };
   }, [mode]);
 
-  // ---- Cleanup on unmount ----
   useEffect(() => {
     return () => {
       if (hostHandleRef.current) hostHandleRef.current.close();
@@ -368,28 +338,23 @@ export default function App() {
     };
   }, []);
 
-  // ---- Keyboard shortcut: solo only ----
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Enter") {
         if (!player) return;
-        if (mode !== "solo") return;
+        if (modeRef.current !== "solo") return;
         if (screen !== "playing") return;
         if (gameState.state === "menu" || gameState.state === "over") {
-          handleStart();
+          handlePractice();
         }
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [player, gameState.state, handleStart, mode, screen]);
+  }, [player, gameState.state, handlePractice, screen]);
 
-  // Derive the result to show on a co-op game over
-  const isCoopOver =
-    (mode === "host" || mode === "guest") &&
-    screen === "playing" &&
-    gameState.state === "over" &&
-    result !== null;
+  const isGameOver =
+    screen === "playing" && gameState.state === "over" && result !== null;
 
   return (
     <div className="fixed inset-0 overflow-hidden">
@@ -398,65 +363,47 @@ export default function App() {
         onState={handleEngineState}
         onGameOver={handleGameOver}
         onSnapshot={handleSnapshot}
+        onDuckMusic={handleDuckMusic}
       />
       <div className="vignette fixed inset-0 pointer-events-none z-[5]" />
 
-      {player && (gameState.state === "playing" || gameState.state === "paused") && screen === "playing" && (
-        <HUD
-          state={gameState}
-          username={player.username}
-          onPause={handlePause}
-          onToggleMute={handleToggleMute}
-          onSignOut={handleSignOut}
-        />
-      )}
+      {player &&
+        (gameState.state === "playing" || gameState.state === "paused") &&
+        screen === "playing" && (
+          <HUD
+            gameState={gameState}
+            onToggleMute={handleToggleMute}
+            onSignOut={handleSignOut}
+            onExitPractice={handleGoToMenu}
+          />
+        )}
 
       {!hydrating && !player && (
-        <SignInScreen
-          signIn={handleSignIn}
-          onSignedIn={() => { /* state updated inside handleSignIn */ }}
-        />
+        <SignInScreen signIn={handleSignIn} onSignedIn={() => {}} />
       )}
 
-      {player && screen === "playing" && gameState.state === "menu" && mode === "solo" && (
-        <StartScreen
-          player={player}
-          onStart={handleStart}
-          onMultiplayer={() => {
-            setJoinError(null);
-            setScreen("mp-choice");
-          }}
-          onSignOut={handleSignOut}
-        />
+      {player &&
+        screen === "playing" &&
+        !isGameOver &&
+        gameState.state !== "playing" &&
+        gameState.state !== "paused" && (
+          <StartScreen
+            player={player}
+            onStart={handlePractice}
+            onMultiplayer={() => { setJoinError(null); setScreen("mp-choice"); }}
+            onSignOut={handleSignOut}
+          />
+        )}
+
+      {player && screen === "playing" && gameState.state === "paused" && (
+        <PauseScreen onResume={handleResume} onMenu={handleGoToMenu} />
       )}
 
-      {player && screen === "playing" && gameState.state === "paused" && mode === "solo" && (
-        <PauseScreen onResume={handleResume} />
-      )}
-
-      {player && screen === "playing" && gameState.state === "over" && result && !isCoopOver && (
+      {player && isGameOver && result && (
         <GameOverScreen
           result={result}
-          best={player.best_score ?? 0}
-          isNewBest={isNewBest}
-          saving={savingResult}
-          playerId={player.id}
-          onRetry={handleStart}
-        />
-      )}
-
-      {player && isCoopOver && result && (
-        <GameOverScreen
-          result={result}
-          best={0}
-          isNewBest={false}
-          saving={savingResult}
-          playerId={player.id}
-          onRetry={() => { /* unused */ }}
-          isCoop
-          hostUsername={mode === "host" ? player.username : hostName ?? "—"}
-          guestUsername={mode === "host" ? guestName ?? "—" : player.username}
-          onExitCoop={exitMultiplayer}
+          partnerScore={gameState.partnerScore}
+          onMenu={exitMultiplayer}
         />
       )}
 
@@ -482,7 +429,7 @@ export default function App() {
         <GuestLobby
           status={guestStatus}
           hostName={hostName}
-          guestName={player.username}
+          guestName={guestName}
           countdown={countdown}
           onSubmitCode={joinAsGuest}
           onCancel={exitMultiplayer}

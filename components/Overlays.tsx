@@ -1,266 +1,149 @@
-import { useState, type FormEvent } from "react";
-import { Leaderboard } from "./Leaderboard";
+import { useState } from "react";
+import { useLeaderboard } from "../hooks/useLeaderboard";
 import { validateUsername, type StoredPlayer } from "../lib/player";
 import type { Player } from "../lib/supabase";
+import { playClick, playClickSmall } from "../lib/sounds";
 
-const overlayBg =
-  "fixed inset-0 z-30 grid place-items-center bg-[radial-gradient(120%_90%_at_50%_28%,rgba(28,18,60,0.55),rgba(8,8,22,0.93))] backdrop-blur-md";
-
-// ----- Sign-in -----
-type SignInProps = {
-  onSignedIn: (p: Player) => Promise<void> | void;
-  signIn: (username: string) => Promise<Player>;
-};
-export function SignInScreen({ onSignedIn, signIn }: SignInProps) {
-  const [username, setUsername] = useState("");
-  const [busy, setBusy] = useState(false);
+export function SignInScreen({
+  signIn,
+  onSignedIn,
+}: {
+  signIn: (u: string) => Promise<unknown>;
+  onSignedIn: () => void;
+}) {
+  const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    const check = validateUsername(username);
-    if (!check.ok) { setErr(check.error); return; }
+  const [busy, setBusy] = useState(false);
+  async function submit() {
+    if (busy) return;
+    const v = validateUsername(name);
+    if (!v.ok) { setErr(v.error); return; }
     setBusy(true); setErr(null);
-    try {
-      const p = await signIn(check.value);
-      await onSignedIn(p);
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Couldn't enter the drift.");
-    } finally {
-      setBusy(false);
-    }
+    try { await signIn(v.value); onSignedIn(); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
   }
-
   return (
-    <div className={overlayBg}>
-      <div className="animate-rise text-center max-w-[560px] px-6">
-        <h1 className="font-heading title-gradient text-6xl sm:text-7xl md:text-8xl leading-[0.92] tracking-[0.04em]">
-          XENO<br />DRIFT
-        </h1>
-        <div className="mt-3 font-heading text-xs sm:text-sm uppercase tracking-[0.36em] text-secondary-light">
-          Aliens hunt · monsters survive
-        </div>
-        <p className="mt-5 text-[15px] text-[#bca9e6] leading-relaxed max-w-[440px] mx-auto">
-          Claim a callsign to enter the drift. Your callsign IS your account —
-          your score posts to the global leaderboard the moment you die.
-        </p>
-
-        <form onSubmit={submit} className="mt-7 flex flex-col items-center gap-3">
-          <div className="hud-panel px-4 py-3 w-full max-w-[360px] focus-within:border-primary transition-colors">
-            <div className="text-[10px] tracking-[0.26em] uppercase text-muted-foreground text-left">Callsign</div>
-            <input
-              autoFocus
-              value={username}
-              onChange={(e) => { setUsername(e.target.value); if (err) setErr(null); }}
-              maxLength={16}
-              placeholder="e.g. NEON_REAPER"
-              spellCheck={false}
-              autoComplete="off"
-              className="w-full bg-transparent outline-none font-heading text-xl text-foreground tracking-[0.08em] mt-1 placeholder:text-[#5b4e85]"
-            />
-          </div>
-          {err && (
-            <div className="text-[13px] text-destructive-light tracking-wide" style={{ color: "#fb7185" }}>
-              {err}
-            </div>
-          )}
-          <button type="submit" disabled={busy} className="cta mt-2">
-            {busy ? "Entering…" : "Enter the drift"}
-          </button>
-          <div className="text-[11px] tracking-[0.16em] uppercase text-[#6f5f93] mt-1">
-            new callsign creates an account · existing one signs in
-          </div>
-        </form>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0b1a]/90 backdrop-blur">
+      <div className="bg-[#0e1021]/90 border border-white/10 rounded-2xl p-8 max-w-sm w-full mx-4">
+        <h2 className="text-2xl font-bold text-white text-center mb-2">Drift In</h2>
+        <p className="text-sm text-white/50 text-center mb-6">Choose a callsign.</p>
+        <input
+          value={name}
+          onChange={(e) => { setName(e.target.value); setErr(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          placeholder="Callsign (3–16)"
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-violet-400"
+        />
+        {err && <p className="text-rose-400 text-xs mt-2">{err}</p>}
+        <button
+          onClick={() => { playClick(); submit(); }}
+          disabled={busy}
+          className="mt-4 w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2 rounded-lg transition cursor-pointer"
+        >
+          {busy ? "Entering…" : "Enter Arena"}
+        </button>
       </div>
     </div>
   );
 }
 
-// ----- Start (after sign-in) -----
-type StartProps = {
+export function StartScreen({
+  player,
+  onStart,
+  onMultiplayer,
+  onSignOut,
+}: {
   player: StoredPlayer & Partial<Player>;
   onStart: () => void;
   onMultiplayer: () => void;
   onSignOut: () => void;
-};
-export function StartScreen({ player, onStart, onMultiplayer, onSignOut }: StartProps) {
+}) {
+  const { entries, loading, refresh } = useLeaderboard();
   return (
-    <div className={overlayBg}>
-      <div className="animate-rise flex flex-col md:flex-row gap-8 items-center md:items-stretch max-w-[1100px] w-full px-6">
-        <div className="text-center md:text-left flex-1">
-          <div className="font-heading text-xs uppercase tracking-[0.26em] text-muted-foreground">
-            Welcome back, pilot
-          </div>
-          <h1 className="font-heading title-gradient text-6xl sm:text-7xl md:text-8xl leading-[0.92] tracking-[0.04em] mt-1">
-            XENO<br />DRIFT
-          </h1>
-          <div className="mt-3 font-heading text-xs sm:text-sm uppercase tracking-[0.36em] text-secondary-light">
-            {player.username} · best {(player.best_score ?? 0).toLocaleString()}
-          </div>
-          <p className="mt-5 text-[15px] text-[#bca9e6] leading-relaxed max-w-[460px]">
-            You are the last monster adrift in dead space. <b>Move and dodge</b> — your monster
-            auto-targets the nearest alien and fires on its own. Slip past the drifting
-            organisms, grab power-ups, and outlast the swarm.
-          </p>
-
-          <div className="flex gap-4 justify-center md:justify-start flex-wrap mt-5 text-[13px] text-[#cbb9ec]">
-            <Legend color="#a3e635" label="You — monster" />
-            <Legend color="#7c3aed" label="Aliens — hunt & shoot" />
-            <Legend color="#22d3ee" label="Organisms — avoid" />
-          </div>
-
-          <div className="flex gap-3.5 justify-center md:justify-start flex-wrap mt-4 text-xs text-[#a89bc8]">
-            <Powerchip color="#a3e635" glyph="+" label="Heal" />
-            <Powerchip color="#22d3ee" glyph="S" label="Shield" />
-            <Powerchip color="#fbbf24" glyph="R" label="Rapid" />
-            <Powerchip color="#fb7185" glyph="3" label="Spread" />
-          </div>
-
-          <div className="hidden sm:flex gap-2 justify-center md:justify-start flex-wrap mt-6 items-center">
-            <span className="keycap">W A S D</span><span className="text-[12px] text-[#8b78b5] tracking-[0.08em]">move</span>
-            <span className="keycap">SHIFT</span><span className="text-[12px] text-[#8b78b5] tracking-[0.08em]">dash</span>
-            <span className="keycap">AUTO</span><span className="text-[12px] text-[#8b78b5] tracking-[0.08em]">aim & fire</span>
-          </div>
-
-          <div className="mt-7 flex gap-3 items-center justify-center md:justify-start flex-wrap">
-            <button onClick={onStart} className="cta">Enter the drift</button>
-            <button onClick={onMultiplayer} className="cta cta-secondary">Play with friend</button>
-            <button
-              onClick={onSignOut}
-              className="font-heading text-[11px] tracking-[0.18em] uppercase text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-3 py-2"
-            >
-              Switch pilot
-            </button>
-          </div>
-          <div className="mt-3 text-[11px] tracking-[0.16em] uppercase text-[#6f5f93] text-center md:text-left">
-            press Enter · touch: drag to move
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0a0b1a]/80 backdrop-blur-sm p-8 md:p-12">
+      <div className="flex flex-col md:flex-row w-full max-w-5xl h-full md:h-auto items-center md:items-stretch gap-8">
+        {/* Left: title + buttons */}
+        <div className="flex flex-col items-center justify-center flex-1">
+          <div className="flex flex-col items-center">
+            <h1 className="text-5xl md:text-6xl font-bold text-white tracking-tight text-center leading-tight">
+              Xeno Drift
+            </h1>
+            <p className="text-white/50 text-sm mt-3 mb-8 text-center">Co-op arena shooter</p>
+            <div className="flex flex-col gap-4 w-full max-w-xs">
+              <button onClick={() => { playClick(); onStart(); }} className="w-full bg-lime-500 hover:bg-lime-400 text-[#0b0c1a] font-bold py-3.5 rounded-xl transition cursor-pointer text-lg tracking-wide">Practice</button>
+              <button onClick={() => { playClick(); onMultiplayer(); }} className="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-3.5 rounded-xl transition cursor-pointer text-lg tracking-wide">Play with a Friend</button>
+              <button onClick={() => { playClickSmall(); onSignOut(); }} className="w-full bg-white/10 hover:bg-white/20 text-white font-medium py-2.5 rounded-xl transition cursor-pointer">Sign Out</button>
+            </div>
           </div>
         </div>
 
-        <div className="flex-shrink-0">
-          <Leaderboard currentPlayerId={player.id} />
+        {/* Right: leaderboard */}
+        <div className="flex flex-col items-center justify-center flex-1">
+          <div className="w-full max-w-xs">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs uppercase tracking-widest text-white/60">Leaderboard</h3>
+              <button onClick={() => { playClickSmall(); refresh(); }} className="text-[10px] text-lime-400 hover:text-lime-300 cursor-pointer">Refresh</button>
+            </div>
+            <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+              {loading ? (
+                <div className="p-4 text-center text-white/40 text-xs">Loading...</div>
+              ) : entries.length === 0 ? (
+                <div className="p-4 text-center text-white/40 text-xs">No scores yet</div>
+              ) : (
+                <div className="max-h-64 overflow-y-auto">
+                  {entries.map((e, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2 text-sm border-b border-white/5 last:border-0">
+                      <span className="text-white/80 font-mono">{i + 1}. {e.username}</span>
+                      <span className="text-lime-400 font-mono">{e.kills}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function Legend({ color, label }: { color: string; label: string }) {
+export function PauseScreen({ onResume, onMenu }: { onResume: () => void; onMenu: () => void }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-3.5 h-3.5 rounded-full" style={{ background: color, boxShadow: `0 0 12px ${color}` }} />
-      {label}
-    </div>
-  );
-}
-function Powerchip({ color, glyph, label }: { color: string; glyph: string; label: string }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span
-        className="w-5 h-5 rounded-md grid place-items-center font-heading text-xs font-bold"
-        style={{ background: color, color: "#0b0b1a" }}
-      >
-        {glyph}
-      </span>
-      {label}
-    </div>
-  );
-}
-
-// ----- Pause -----
-export function PauseScreen({ onResume }: { onResume: () => void }) {
-  return (
-    <div className={overlayBg}>
-      <div className="animate-rise text-center px-6">
-        <h1 className="font-heading title-gradient text-5xl sm:text-7xl tracking-[0.04em]">PAUSED</h1>
-        <button onClick={onResume} className="cta cta-secondary mt-7">Resume</button>
-        <div className="mt-4 text-[11px] tracking-[0.16em] uppercase text-[#6f5f93]">press P or Esc</div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0b1a]/70 backdrop-blur">
+      <div className="text-center flex flex-col items-center gap-4">
+        <h2 className="text-2xl font-bold text-white">Paused</h2>
+        <button onClick={() => { playClick(); onResume(); }} className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-lg transition cursor-pointer w-48">Resume</button>
+        <button onClick={() => { playClickSmall(); onMenu(); }} className="bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 px-6 py-2 rounded-lg transition cursor-pointer w-48 text-sm">Exit to Menu</button>
       </div>
     </div>
   );
 }
 
-// ----- Game over -----
-type OverProps = {
-  result: { score: number; wave: number; kills: number };
-  best: number;
-  isNewBest: boolean;
-  saving: boolean;
-  playerId?: string;
-  onRetry: () => void;
-  // Co-op extras
-  isCoop?: boolean;
-  hostUsername?: string;
-  guestUsername?: string;
-  onExitCoop?: () => void;
-};
 export function GameOverScreen({
-  result, best, isNewBest, saving, playerId, onRetry,
-  isCoop, hostUsername, guestUsername, onExitCoop,
-}: OverProps) {
+  result,
+  partnerScore,
+  onMenu,
+}: {
+  result: { score: number; wave: number; kills: number };
+  partnerScore?: number;
+  onMenu: () => void;
+}) {
   return (
-    <div className={overlayBg}>
-      <div className="animate-rise flex flex-col md:flex-row gap-8 items-center md:items-stretch max-w-[1100px] w-full px-6">
-        <div className="text-center md:text-left flex-1">
-          <h1 className="font-heading title-gradient-rose text-5xl sm:text-7xl md:text-8xl tracking-[0.04em]">
-            {isCoop ? "HIVE WINS" : "CONSUMED"}
-          </h1>
-          <div className="mt-2 font-heading text-xs sm:text-sm uppercase tracking-[0.36em] text-destructive-light" style={{ color: "#fb7185" }}>
-            {isCoop ? "both pilots downed" : "the swarm got you"}
-          </div>
-
-          {isCoop && (
-            <div className="mt-4 font-heading text-sm tracking-[0.14em]">
-              <span style={{ color: "#a3e635" }}>{hostUsername}</span>
-              <span className="text-muted-foreground mx-2">+</span>
-              <span style={{ color: "#22d3ee" }}>{guestUsername}</span>
-            </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0b1a]/90 backdrop-blur">
+      <div className="bg-[#0e1021]/90 border border-white/10 rounded-2xl p-8 max-w-sm w-full mx-4 text-center">
+        <h2 className="text-3xl font-bold text-white mb-2">Match Over</h2>
+        <p className="text-white/60 text-sm mb-1">
+          Wave <span className="text-white font-mono">{result.wave}</span>
+        </p>
+        <p className="text-white/60 text-sm mb-4">
+          You: <span className="text-white font-mono text-lg">{result.kills}</span>
+          {partnerScore !== undefined && (
+            <> · Partner: <span className="text-white font-mono text-lg">{partnerScore}</span></>
           )}
-
-          <div className="flex gap-3 justify-center md:justify-start mt-6 flex-wrap">
-            <Stat label="Score" value={result.score.toLocaleString()} />
-            {!isCoop && <Stat label="Best" value={best.toLocaleString()} />}
-            <Stat label="Wave" value={String(result.wave)} />
-            <Stat label="Kills" value={String(result.kills)} />
-          </div>
-
-          {isNewBest && !isCoop && (
-            <div className="mt-4 font-heading uppercase tracking-[0.18em] text-sm animate-pulse-soft" style={{ color: "#fb7185" }}>
-              ★ New high score ★
-            </div>
-          )}
-          {saving && (
-            <div className="mt-3 text-[12px] tracking-[0.16em] uppercase text-muted-foreground">
-              Saving to global drift…
-            </div>
-          )}
-
-          <div className="mt-7 flex gap-3 items-center justify-center md:justify-start flex-wrap">
-            {isCoop ? (
-              <button onClick={onExitCoop} className="cta">Back to menu</button>
-            ) : (
-              <button onClick={onRetry} className="cta">Respawn</button>
-            )}
-          </div>
-          {!isCoop && (
-            <div className="mt-3 text-[11px] tracking-[0.16em] uppercase text-[#6f5f93] text-center md:text-left">
-              or press Enter
-            </div>
-          )}
-        </div>
-        <div className="flex-shrink-0">
-          <Leaderboard currentPlayerId={playerId} />
-        </div>
+        </p>
+        <button onClick={() => { playClick(); onMenu(); }} className="w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2 rounded-lg transition cursor-pointer">Back to Menu</button>
       </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="hud-panel px-5 py-3.5 min-w-[104px]">
-      <div className="text-[10px] tracking-[0.26em] uppercase text-muted-foreground font-semibold">{label}</div>
-      <div className="font-heading text-2xl text-white text-glow-secondary mt-1.5">{value}</div>
     </div>
   );
 }

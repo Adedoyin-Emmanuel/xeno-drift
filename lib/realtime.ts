@@ -37,16 +37,17 @@ export type GuestInput = {
   fire: boolean;
   ts?: number;
 };
-
 export type CoopSnapshot = {
   state: "menu" | "playing" | "over";
-  score: number;          // host kills
-  opponentScore: number;   // guest kills
+  score: number;
+  opponentScore: number;
   hp: number;
   maxHp: number;
   dashCd: number;
   dashMax: number;
   muted: boolean;
+  wave: number;
+  enemies: number[]; // [x, y, r, hp, maxhp, hue, aim, alive, kind] per enemy
   host: {
     x: number; y: number; aim: number; alive: boolean;
     hp: number; maxHp: number; dashCd: number; dashMax: number; score: number;
@@ -55,12 +56,11 @@ export type CoopSnapshot = {
     x: number; y: number; aim: number; alive: boolean;
     hp: number; maxHp: number; dashCd: number; dashMax: number; score: number;
   };
-  bullets: number[]; // [x, y, r, owner]
+  bullets: number[];
   W: number;
   H: number;
   tick: number;
 };
-
 export type HostMessage =
   | { type: "welcome"; hostUsername: string }
   | { type: "snapshot"; s: CoopSnapshot }
