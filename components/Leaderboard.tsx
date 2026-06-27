@@ -1,9 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { Medal, Radio, Shield, Trophy, Zap } from "lucide-react";
-
-type TopEntry = { id?: string; username: string; best_score: number; best_wave: number; games_played: number };
-type RecentEntry = { id: string; player_id?: string | null; username: string; score: number; wave: number; kills: number; created_at: string };
+import { formatCompactNumber } from "../lib/format";
+type TopEntry = {
+  id?: string;
+  username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  best_score: number;
+  best_wave: number;
+  games_played: number;
+};
+type RecentEntry = {
+  id: string;
+  player_id?: string | null;
+  username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  score: number;
+  wave: number;
+  kills: number;
+  created_at: string;
+};
 
 type LeaderboardProps = {
   variant?: "home" | "full";
@@ -24,6 +42,26 @@ function formatTimeAgo(dateString: string) {
   } catch {
     return "";
   }
+}
+
+function PlayerAvatar({ name, url }: { name: string; url?: string | null }) {
+  const initial = (name.trim()[0] || "P").toUpperCase();
+  return url ? (
+    <img
+      src={url}
+      alt=""
+      referrerPolicy="no-referrer"
+      className="h-9 w-9 shrink-0 rounded-2xl border-2 border-white/15 bg-white/10 object-cover"
+    />
+  ) : (
+    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl border-2 border-white/15 bg-primary font-heading text-sm font-extrabold text-white">
+      {initial}
+    </div>
+  );
+}
+
+function displayName(entry: { display_name?: string | null; username: string }) {
+  return entry.display_name?.trim() || entry.username;
 }
 
 function RankMark({ rank }: { rank: number }) {
@@ -52,8 +90,9 @@ export default function Leaderboard({ variant = "full", currentUsername }: Leade
   async function fetchLeaderboardAndRecent() {
     try {
       const { data: topData, error: topError } = await supabase
-        .from("players")
-        .select("id, username, best_score, best_wave, games_played")
+        .from("leaderboard_entries")
+        .select("username, display_name, avatar_url, best_score, best_wave, games_played")
+        .gt("games_played", 0)
         .order("best_score", { ascending: false })
         .limit(isHome ? 10 : 30);
       if (topError) console.error("Error loading top players:", topError);
@@ -61,7 +100,7 @@ export default function Leaderboard({ variant = "full", currentUsername }: Leade
       if (!isHome) {
         const { data: recentData, error: recentError } = await supabase
           .from("scores")
-          .select("id, player_id, username, score, wave, kills, created_at")
+          .select("id, player_id, username, display_name, avatar_url, score, wave, kills, created_at")
           .order("created_at", { ascending: false })
           .limit(30);
         if (recentError) console.error("Error loading recent scores:", recentError);
@@ -71,8 +110,9 @@ export default function Leaderboard({ variant = "full", currentUsername }: Leade
       if (topData) {
         setTopEntries(
           topData.map((x: any) => ({
-            id: x.id,
             username: x.username,
+            display_name: x.display_name,
+            avatar_url: x.avatar_url,
             best_score: x.best_score ?? 0,
             best_wave: x.best_wave ?? 1,
             games_played: x.games_played ?? 0,
@@ -137,18 +177,21 @@ export default function Leaderboard({ variant = "full", currentUsername }: Leade
                   <div className="grid h-8 w-8 place-items-center rounded-xl bg-white/5">
                     <RankMark rank={idx + 1} />
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-heading text-sm font-bold leading-tight text-white">{p.username}</span>
-                      {you && <YouBadge />}
-                    </div>
-                    <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
-                      <span className="flex shrink-0 items-center gap-1"><Shield size={11} className="text-secondary" aria-hidden="true" /> Wave {p.best_wave}</span>
-                      {!isHome && <span className="truncate">{p.games_played} runs</span>}
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <PlayerAvatar name={displayName(p)} url={p.avatar_url} />
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-heading text-sm font-bold leading-tight text-white">{displayName(p)}</span>
+                        {you && <YouBadge />}
+                      </div>
+                      <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
+                        <span className="flex shrink-0 items-center gap-1"><Shield size={11} className="text-secondary" aria-hidden="true" /> Wave {p.best_wave}</span>
+                        {!isHome && <span className="truncate">{p.games_played} runs</span>}
+                      </div>
                     </div>
                   </div>
-                  <div className="max-w-[96px] truncate text-right font-heading text-sm font-extrabold tabular-nums text-accent sm:max-w-none">
-                    {p.best_score.toLocaleString()}
+                  <div className="max-w-[96px] truncate text-right font-heading text-sm font-extrabold tabular-nums text-accent sm:max-w-none" title={p.best_score.toLocaleString()}>
+                    {formatCompactNumber(p.best_score)}
                   </div>
                 </div>
               );
@@ -183,19 +226,22 @@ export default function Leaderboard({ variant = "full", currentUsername }: Leade
                   key={score.id || idx}
                   className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2.5 transition duration-200 ${you ? "px-2" : "px-1"}`}
                 >
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-heading text-sm font-bold leading-tight text-white">{score.username}</span>
-                      {you && <YouBadge />}
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <PlayerAvatar name={displayName(score)} url={score.avatar_url} />
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-heading text-sm font-bold leading-tight text-white">{displayName(score)}</span>
+                        {you && <YouBadge />}
+                      </div>
+                      <div className="mt-0.5 text-[10px] font-bold text-muted-foreground">{formatTimeAgo(score.created_at)}</div>
                     </div>
-                    <div className="mt-0.5 text-[10px] font-bold text-muted-foreground">{formatTimeAgo(score.created_at)}</div>
                   </div>
                   <div className="min-w-[76px] text-right">
-                    <div className="truncate font-heading text-sm font-extrabold tabular-nums text-secondary">{score.score.toLocaleString()}</div>
+                    <div className="truncate font-heading text-sm font-extrabold tabular-nums text-secondary" title={score.score.toLocaleString()}>{formatCompactNumber(score.score)}</div>
                     <div className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
                       <span>W{score.wave}</span>
                       <span>•</span>
-                      <span className="flex items-center gap-0.5"><Zap size={10} aria-hidden="true" /> {score.kills} K</span>
+                      <span className="flex items-center gap-0.5"><Zap size={10} aria-hidden="true" /> {formatCompactNumber(score.kills)}</span>
                     </div>
                   </div>
                 </div>

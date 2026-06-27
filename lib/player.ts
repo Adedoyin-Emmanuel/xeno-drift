@@ -46,9 +46,14 @@ function sanitizeUsername(raw: string | undefined | null): string {
   return `${cleaned || fallback}${Math.floor(100 + Math.random() * 900)}`.slice(0, 16);
 }
 
-function preferredUsername(user: User): string {
+function sanitizeDisplayName(raw: string | undefined | null, fallback: string): string {
+  const cleaned = (raw || "").trim().replace(/\s+/g, " ").slice(0, 80);
+  return cleaned || fallback;
+}
+
+function userProfile(user: User): { username: string; display_name: string; avatar_url: string | null } {
   const meta = user.user_metadata ?? {};
-  return sanitizeUsername(
+  const username = sanitizeUsername(
     meta.user_name ||
       meta.preferred_username ||
       meta.name ||
@@ -56,6 +61,12 @@ function preferredUsername(user: User): string {
       user.email ||
       user.id
   );
+
+  return {
+    username,
+    display_name: sanitizeDisplayName(meta.full_name || meta.name || user.email, username),
+    avatar_url: typeof meta.avatar_url === "string" ? meta.avatar_url : typeof meta.picture === "string" ? meta.picture : null,
+  };
 }
 
 function candidateUsernames(base: string): string[] {
@@ -85,6 +96,7 @@ export async function signOutPlayer(): Promise<void> {
 }
 
 export async function ensurePlayerForUser(user: User): Promise<Player> {
+  const profile = userProfile(user);
   const { data: existing, error: lookupErr } = await supabase
     .from("players")
     .select("*")
@@ -93,14 +105,36 @@ export async function ensurePlayerForUser(user: User): Promise<Player> {
 
   if (lookupErr) throw new Error(lookupErr.message);
   if (existing) {
+    const profileChanged = existing.display_name !== profile.display_name || existing.avatar_url !== profile.avatar_url;
+
+    if (profileChanged) {
+      const { data: updated, error: updateErr } = await supabase
+        .from("players")
+        .update({ display_name: profile.display_name, avatar_url: profile.avatar_url })
+        .eq("id", existing.id)
+        .eq("auth_user_id", user.id)
+        .select("*")
+        .single();
+      if (updateErr) console.error("profile update failed", updateErr);
+      if (updated) {
+        saveStoredPlayer({ id: updated.id, username: updated.username, auth_user_id: updated.auth_user_id });
+        return updated as Player;
+      }
+    }
+
     saveStoredPlayer({ id: existing.id, username: existing.username, auth_user_id: existing.auth_user_id });
     return existing as Player;
   }
 
-  for (const username of candidateUsernames(preferredUsername(user))) {
+  for (const username of candidateUsernames(profile.username)) {
     const { data: created, error: insertErr } = await supabase
       .from("players")
-      .insert({ auth_user_id: user.id, username })
+      .insert({
+        auth_user_id: user.id,
+        username,
+        display_name: profile.display_name,
+        avatar_url: profile.avatar_url,
+      })
       .select("*")
       .single();
 
@@ -150,17 +184,6 @@ export async function submitGameResult(player: StoredPlayer, result: GameResult)
   if (!authUserId) throw new Error("You must be signed in to save scores.");
   if (player.auth_user_id && player.auth_user_id !== authUserId) throw new Error("This score does not belong to the signed-in player.");
 
-  const { error: scoreErr } = await supabase.from("scores").insert({
-    player_id: player.id,
-    username: player.username,
-    score: result.score,
-    wave: result.wave,
-    kills: result.kills,
-  });
-  if (scoreErr) {
-    console.error("score insert failed", scoreErr);
-  }
-
   const { data: current } = await supabase
     .from("players")
     .select("*")
@@ -169,6 +192,19 @@ export async function submitGameResult(player: StoredPlayer, result: GameResult)
     .maybeSingle();
 
   if (!current) return null;
+
+  const { error: scoreErr } = await supabase.from("scores").insert({
+    player_id: current.id,
+    username: current.username,
+    display_name: current.display_name || current.username,
+    avatar_url: current.avatar_url,
+    score: result.score,
+    wave: result.wave,
+    kills: result.kills,
+  });
+  if (scoreErr) {
+    console.error("score insert failed", scoreErr);
+  }
 
   const update = {
     best_score: Math.max(current.best_score, result.score),
@@ -179,7 +215,7 @@ export async function submitGameResult(player: StoredPlayer, result: GameResult)
   const { data: updated, error: updateErr } = await supabase
     .from("players")
     .update(update)
-    .eq("id", player.id)
+    .eq("id", current.id)
     .eq("auth_user_id", authUserId)
     .select("*")
     .single();

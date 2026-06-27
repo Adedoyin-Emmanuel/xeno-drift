@@ -3,6 +3,8 @@ import { supabase } from "../lib/supabase";
 
 export type LeaderboardEntry = {
   username: string;
+  displayName: string;
+  avatarUrl: string | null;
   kills: number;
   games: number;
   best: number;
@@ -11,6 +13,8 @@ export type LeaderboardEntry = {
 function mapRow(row: any): LeaderboardEntry {
   return {
     username: row.username ?? "???",
+    displayName: row.display_name || row.username || "???",
+    avatarUrl: row.avatar_url ?? null,
     kills: row.total_kills ?? 0,
     games: row.games_played ?? 0,
     best: row.best_score ?? 0,
@@ -25,7 +29,8 @@ export function useLeaderboard() {
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from("leaderboard_entries")
-      .select("username,total_kills,games_played,best_score")
+      .select("username,display_name,avatar_url,total_kills,games_played,best_score")
+      .gt("games_played", 0)
       .order("total_kills", { ascending: false })
       .limit(20);
 

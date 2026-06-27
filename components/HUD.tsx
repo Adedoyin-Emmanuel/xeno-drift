@@ -1,7 +1,7 @@
 import { Volume2, VolumeX, LogOut, X, Pause, Play } from "lucide-react";
 import type { PublicState } from "../game/engine";
 import { playClickSmall } from "../lib/sounds";
-
+import { formatCompactNumber } from "../lib/format";
 export function HUD({
   gameState,
   onToggleMute,
@@ -26,8 +26,8 @@ export function HUD({
       <div className="flex justify-between items-start gap-3">
         <div className="hud-panel px-4 py-2.5 pointer-events-auto">
           <div className="text-[11px] tracking-[0.12em] uppercase text-muted-foreground font-extrabold">Score</div>
-          <div className="font-heading text-[clamp(24px,3.2vw,32px)] leading-none text-primary">
-            {gameState.score.toLocaleString()}
+          <div className="font-heading text-[clamp(24px,3.2vw,32px)] leading-none text-primary" title={gameState.score.toLocaleString()}>
+            {formatCompactNumber(gameState.score)}
           </div>
         </div>
 
@@ -97,8 +97,8 @@ export function HUD({
                   style={{ width: `${gameState.partner.alive ? partnerHpPct : 0}%` }}
                 />
               </div>
-              <span className="text-[11px] font-extrabold text-secondary">
-                {gameState.partner.alive ? gameState.partnerScore?.toLocaleString() : "DOWN"}
+              <span className="text-[11px] font-extrabold text-secondary" title={gameState.partnerScore?.toLocaleString()}>
+                {gameState.partner.alive ? formatCompactNumber(gameState.partnerScore) : "DOWN"}
               </span>
             </div>
           )}

@@ -5,7 +5,7 @@ import type { StoredPlayer } from "../lib/player";
 import type { Player } from "../lib/supabase";
 import { playClick, playClickSmall } from "../lib/sounds";
 import Leaderboard from "./Leaderboard";
-
+import { formatCompactNumber } from "../lib/format";
 function OverlayShell({ children }: { children: ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-[#0a0b14] px-4">
@@ -39,21 +39,30 @@ export function SignInScreen({
 
   return (
     <OverlayShell>
-      <div className="arcade-card w-full max-w-sm p-7 text-center">
-        <div className="mb-2 font-heading text-[46px] font-extrabold leading-none tracking-tight text-white">Xeno Drift</div>
-        <p className="mb-7 text-sm leading-6 text-muted-foreground">
-          Sign in securely to protect your pilot name and leaderboard scores.
-        </p>
-        {err && <p className="mb-3 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{err}</p>}
-        <button
-          onClick={() => { playClick(); submit(); }}
-          disabled={busy}
-          className="cta flex w-full items-center justify-center gap-3 !py-3 text-base"
-        >
-          <Google />
-          {busy ? "Opening Google..." : "Sign in with Google"}
-        </button>
-      </div>
+      <main className="scrollbar-game grid w-full max-w-5xl grid-cols-1 items-start gap-6 px-2 pb-8 text-center lg:max-h-[92vh] lg:grid-cols-[minmax(0,380px)_minmax(300px,420px)] lg:items-center lg:overflow-hidden lg:pb-0">
+        <section className="arcade-card w-full p-7 text-center">
+          <div className="mb-2 font-heading text-[46px] font-extrabold leading-none tracking-tight text-white">Xeno Drift</div>
+          <p className="mb-7 text-sm leading-6 text-muted-foreground">
+            Continue with Google to play and save your score.
+          </p>
+          {err && <p className="mb-3 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{err}</p>}
+          <button
+            onClick={() => { playClick(); submit(); }}
+            disabled={busy}
+            className="cta cta-secondary flex w-full items-center justify-center gap-3 !py-3 text-base"
+          >
+            <Google />
+            {busy ? "Opening Google..." : "Sign in with Google"}
+          </button>
+          <p className="mt-5 text-xs font-semibold leading-5 text-[#F8FAFC]/60">
+            Climb the public board, challenge top pilots, and unlock your next best run.
+          </p>
+        </section>
+
+        <section className="min-h-[360px] w-full min-w-0 overflow-hidden px-1 pb-2 sm:min-h-[420px] lg:h-[min(620px,86vh)] lg:px-0 lg:pb-0">
+          <Leaderboard variant="home" />
+        </section>
+      </main>
     </OverlayShell>
   );
 }
@@ -86,7 +95,7 @@ export function StartScreen({
 
           <div className="mb-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-bold text-[#F8FAFC]/80 sm:mb-6 sm:text-sm">
             <span>Pilot <strong className="font-heading text-primary">{player.username}</strong></span>
-            <span>Best <strong className="font-heading text-accent">{player.best_score || 0}</strong></span>
+            <span>Best <strong className="font-heading text-accent" title={(player.best_score || 0).toLocaleString()}>{formatCompactNumber(player.best_score || 0)}</strong></span>
             <span>Wave <strong className="font-heading text-secondary">{player.best_wave || 1}</strong></span>
           </div>
 
@@ -168,9 +177,9 @@ export function GameOverScreen({
       <div className="arcade-card w-72 p-7 text-center">
         <div className="font-heading text-3xl mb-1">Game Over</div>
         {isNewBest && <div className="mb-2 text-xs font-extrabold uppercase tracking-wider text-accent">New best run</div>}
-        <div className="text-[56px] tabular-nums font-heading text-primary mt-0 mb-3">{result.score}</div>
-        <div className="text-sm mb-2 text-muted-foreground">Wave {result.wave}{partnerScore !== undefined ? " • Ally " + partnerScore : ""}</div>
-        {bestScore !== undefined && <div className="mb-6 text-xs font-bold text-muted-foreground">Best: {bestScore.toLocaleString()}</div>}
+        <div className="text-[56px] tabular-nums font-heading text-primary mt-0 mb-3" title={result.score.toLocaleString()}>{formatCompactNumber(result.score)}</div>
+        <div className="text-sm mb-2 text-muted-foreground">Wave {result.wave}{partnerScore !== undefined ? " • Ally " + formatCompactNumber(partnerScore) : ""}</div>
+        {bestScore !== undefined && <div className="mb-6 text-xs font-bold text-muted-foreground" title={bestScore.toLocaleString()}>Best: {formatCompactNumber(bestScore)}</div>}
         <div className="flex flex-col gap-2">
           {onRetry && <button onClick={() => { playClick(); onRetry(); }} className="cta">Retry</button>}
           <button onClick={() => { playClickSmall(); onMenu(); }} className="cta cta-secondary">Menu</button>

@@ -16,6 +16,8 @@ export type Player = {
   id: string;
   auth_user_id: string | null;
   username: string;
+  display_name: string | null;
+  avatar_url: string | null;
   created_at: string;
   best_score: number;
   best_wave: number;
@@ -27,6 +29,8 @@ export type ScoreRow = {
   id: string;
   player_id: string;
   username: string;
+  display_name: string | null;
+  avatar_url: string | null;
   score: number;
   wave: number;
   kills: number;
