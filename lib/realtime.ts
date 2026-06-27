@@ -50,11 +50,11 @@ export type CoopSnapshot = {
   enemies: number[]; // [x, y, r, hp, maxhp, hue, aim, alive, kind] per enemy
   host: {
     x: number; y: number; aim: number; alive: boolean;
-    hp: number; maxHp: number; dashCd: number; dashMax: number; score: number;
+    hp: number; maxHp: number; dashCd: number; dashMax: number; score: number; kills: number;
   };
   guest: {
     x: number; y: number; aim: number; alive: boolean;
-    hp: number; maxHp: number; dashCd: number; dashMax: number; score: number;
+    hp: number; maxHp: number; dashCd: number; dashMax: number; score: number; kills: number;
   };
   bullets: number[];
   W: number;

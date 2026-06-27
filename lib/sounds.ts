@@ -2,7 +2,7 @@
 
 let sharedCtx: AudioContext | null = null;
 let musicEl: HTMLAudioElement | null = null;
-let musicBaseVolume = 0.3;
+let musicBaseVolume = 0.14;
 
 function getCtx(): AudioContext | null {
   if (!sharedCtx) {
@@ -29,16 +29,16 @@ export function initMusic(): HTMLAudioElement {
   return musicEl;
 }
 
-/** Set music volume (0–1). Ducked during gameplay. */
+/** Set music volume (0–1). */
 export function setMusicVolume(v: number) {
   musicBaseVolume = Math.max(0, Math.min(1, v));
   if (musicEl) musicEl.volume = musicBaseVolume;
 }
 
-/** Duck music for gameplay — call with true when playing, false when in menus. */
+/** Keep the background track quiet so gameplay SFX stay clear. */
 export function duckMusic(active: boolean) {
   if (!musicEl) return;
-  musicEl.volume = active ? musicBaseVolume * 0.35 : musicBaseVolume;
+  musicEl.volume = active ? musicBaseVolume * 0.5 : musicBaseVolume;
 }
 
 /** Play the background music from wherever it is (no-op if already playing). */

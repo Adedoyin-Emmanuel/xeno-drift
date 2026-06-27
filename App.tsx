@@ -6,6 +6,7 @@ import {
   StartScreen,
   PauseScreen,
   GameOverScreen,
+  LeaderboardScreen,
 } from "./components/Overlays";
 import {
   MultiplayerChoice,
@@ -38,7 +39,7 @@ import {
   type GuestHandle,
 } from "./lib/realtime";
 
-type Screen = "playing" | "mp-choice" | "mp-host-lobby" | "mp-guest-lobby";
+type Screen = "playing" | "mp-choice" | "mp-host-lobby" | "mp-guest-lobby" | "leaderboard";
 
 const INITIAL_STATE: PublicState = {
   state: "menu",
@@ -52,6 +53,21 @@ const INITIAL_STATE: PublicState = {
   kills: 0,
 };
 
+function loadBestScore(): number {
+  try {
+    const raw = localStorage.getItem("xenoDriftBest");
+    return raw ? parseInt(raw, 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveBestScore(score: number) {
+  try {
+    localStorage.setItem("xenoDriftBest", String(score));
+  } catch {}
+}
+
 export default function App() {
   const engineRef = useRef<GameEngine | null>(null);
   const [gameState, setGameState] = useState<PublicState>(INITIAL_STATE);
@@ -59,6 +75,8 @@ export default function App() {
   const [hydrating, setHydrating] = useState(true);
   const [result, setResult] = useState<GameResult | null>(null);
   const [savingResult, setSavingResult] = useState(false);
+  const [bestScore, setBestScore] = useState(loadBestScore);
+  const [isNewBest, setIsNewBest] = useState(false);
 
   const [screen, setScreen] = useState<Screen>("playing");
   const [mode, setMode] = useState<"solo" | "host" | "guest">("solo");
@@ -74,6 +92,19 @@ export default function App() {
   const guestNameRef = useRef<string | null>(null);
   const countdownStartedRef = useRef(false);
   const modeRef = useRef<"solo" | "host" | "guest">("solo");
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const isLeaderboardRoute = window.location.pathname === "/leaderboard";
+      setScreen((current) => {
+        if (isLeaderboardRoute) return "leaderboard";
+        return current === "leaderboard" ? "playing" : current;
+      });
+    };
+    syncRoute();
+    window.addEventListener("popstate", syncRoute);
+    return () => window.removeEventListener("popstate", syncRoute);
+  }, []);
 
   useEffect(() => {
     const stored = loadStoredPlayer();
@@ -107,6 +138,16 @@ export default function App() {
   const handleGameOver = useCallback(
     async (r: GameResult) => {
       setResult(r);
+      // Track best score locally
+      const current = loadBestScore();
+      if (r.score > current) {
+        saveBestScore(r.score);
+        setBestScore(r.score);
+        setIsNewBest(true);
+      } else {
+        setBestScore(current);
+        setIsNewBest(false);
+      }
       if (!player) return;
       if (modeRef.current === "host" || modeRef.current === "solo") {
         setSavingResult(true);
@@ -130,6 +171,7 @@ export default function App() {
 
   const handlePractice = useCallback(() => {
     setResult(null);
+    setIsNewBest(false);
     setMode("solo");
     modeRef.current = "solo";
     engineRef.current?.setMode("solo", "");
@@ -139,10 +181,19 @@ export default function App() {
 
   const handlePause = useCallback(() => engineRef.current?.pause(), []);
   const handleResume = useCallback(() => engineRef.current?.resume(), []);
+  const handleTogglePause = useCallback(() => {
+    const e = engineRef.current;
+    if (!e) return;
+    if (e.getState() === "playing") e.pause();
+    else if (e.getState() === "paused") e.resume();
+  }, []);
 
   const handleGoToMenu = useCallback(() => {
     engineRef.current?.goToMenu();
     cleanupMultiplayer();
+    setResult(null);
+    setIsNewBest(false);
+    setScreen("playing");
     restartMusic();
   }, []);
 
@@ -157,6 +208,7 @@ export default function App() {
       }
     }
   }, []);
+
 
   const handleSignIn = useCallback(async (username: string) => {
     const p = await signInOrCreate(username);
@@ -187,6 +239,7 @@ export default function App() {
           setCountdown(null);
           setScreen("playing");
           setResult(null);
+          setIsNewBest(false);
           const gName = guestNameRef.current ?? "";
           engineRef.current?.setMode("host", gName);
           modeRef.current = "host";
@@ -253,7 +306,11 @@ export default function App() {
             );
             engineRef.current?.applySnapshot(s);
             if (s.state === "over") {
-              setResult({ score: s.guest.score, wave: s.wave, kills: s.guest.score });
+              const r = { score: s.guest.score, wave: s.wave, kills: s.guest.score };
+              setResult(r);
+              const current = loadBestScore();
+              if (r.score > current) { saveBestScore(r.score); setBestScore(r.score); setIsNewBest(true); }
+              else { setBestScore(current); setIsNewBest(false); }
             }
           },
           onCountdown: (v) => setCountdown(v),
@@ -356,6 +413,11 @@ export default function App() {
   const isGameOver =
     screen === "playing" && gameState.state === "over" && result !== null;
 
+  const showHUD =
+    player &&
+    (gameState.state === "playing" || gameState.state === "paused") &&
+    screen === "playing";
+
   return (
     <div className="fixed inset-0 overflow-hidden">
       <GameCanvas
@@ -367,16 +429,15 @@ export default function App() {
       />
       <div className="vignette fixed inset-0 pointer-events-none z-[5]" />
 
-      {player &&
-        (gameState.state === "playing" || gameState.state === "paused") &&
-        screen === "playing" && (
-          <HUD
-            gameState={gameState}
-            onToggleMute={handleToggleMute}
-            onSignOut={handleSignOut}
-            onExitPractice={handleGoToMenu}
-          />
-        )}
+      {showHUD && (
+        <HUD
+          gameState={gameState}
+          onToggleMute={handleToggleMute}
+          onSignOut={handleSignOut}
+          onExitPractice={handleGoToMenu}
+          onTogglePause={handleTogglePause}
+        />
+      )}
 
       {!hydrating && !player && (
         <SignInScreen signIn={handleSignIn} onSignedIn={() => {}} />
@@ -391,6 +452,7 @@ export default function App() {
             player={player}
             onStart={handlePractice}
             onMultiplayer={() => { setJoinError(null); setScreen("mp-choice"); }}
+            onLeaderboard={() => { window.history.pushState({}, "", "/leaderboard"); setScreen("leaderboard"); }}
             onSignOut={handleSignOut}
           />
         )}
@@ -402,9 +464,16 @@ export default function App() {
       {player && isGameOver && result && (
         <GameOverScreen
           result={result}
+          bestScore={bestScore}
+          isNewBest={isNewBest}
           partnerScore={gameState.partnerScore}
-          onMenu={exitMultiplayer}
+          onMenu={handleGoToMenu}
+          onRetry={handlePractice}
         />
+      )}
+
+      {player && screen === "leaderboard" && (
+        <LeaderboardScreen onBack={() => { window.history.pushState({}, "", "/"); setScreen("playing"); }} currentUsername={player.username} />
       )}
 
       {player && screen === "mp-choice" && (

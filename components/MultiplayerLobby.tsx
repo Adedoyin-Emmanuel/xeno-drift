@@ -12,13 +12,14 @@ export function MultiplayerChoice({
   onCancel: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0b1a]/90 backdrop-blur">
-      <div className="bg-[#0e1021]/90 border border-white/10 rounded-2xl p-8 max-w-sm w-full mx-4 text-center">
-        <h2 className="text-xl font-bold text-white mb-4">Co-op Arena</h2>
+    <div className="arcade-overlay fixed inset-0 z-50 flex items-center justify-center px-4">
+      <div className="arcade-card p-6 max-w-sm w-full text-center animate-rise">
+        <h2 className="title-gradient font-heading text-[clamp(30px,6vw,44px)] mb-2">Co-op room</h2>
+        <p className="mb-5 text-xs font-bold text-muted-foreground">Team up with a friend in realtime.</p>
         <div className="flex flex-col gap-3">
-          <button onClick={() => { playClick(); onCreate(); }} className="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-2 rounded-lg transition cursor-pointer">Create Room</button>
-          <button onClick={() => { playClick(); onJoin(); }} className="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-lg transition cursor-pointer">Join Room</button>
-          <button onClick={() => { playClickSmall(); onCancel(); }} className="text-white/50 text-sm mt-2 hover:text-white/80 cursor-pointer">Back</button>
+          <button onClick={() => { playClick(); onCreate(); }} className="cta cta-secondary !py-3 text-sm">Create room</button>
+          <button onClick={() => { playClick(); onJoin(); }} className="cta !py-3 text-sm">Join room</button>
+          <button onClick={() => { playClickSmall(); onCancel(); }} className="cta cta-secondary mt-1 !py-2.5 text-xs">Back</button>
         </div>
       </div>
     </div>
@@ -48,26 +49,31 @@ export function HostLobby({
     } catch { /* clipboard not available */ }
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0b1a]/90 backdrop-blur">
-      <div className="bg-[#0e1021]/90 border border-white/10 rounded-2xl p-8 max-w-sm w-full mx-4 text-center">
-        <h2 className="text-xl font-bold text-white mb-2">Room Open</h2>
-        <p className="text-white/50 text-sm mb-4">Share this code with a friend</p>
-        <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-2xl font-mono text-white tracking-widest mb-4 flex items-center justify-center gap-3">
+    <div className="arcade-overlay fixed inset-0 z-50 flex items-center justify-center px-4">
+      <div className="arcade-card p-6 max-w-sm w-full text-center animate-rise">
+        <h2 className="title-gradient font-heading text-[clamp(30px,6vw,44px)] mb-1">Room open</h2>
+        <p className="text-muted-foreground text-xs font-bold mb-4">Share this code</p>
+        <div className="bg-muted border-2 border-border rounded-3xl px-4 py-3 text-2xl font-heading text-foreground tracking-[0.14em] mb-2 flex items-center justify-center gap-3">
           <span>{code}</span>
           <button
             onClick={handleCopy}
-            className="p-1 rounded hover:bg-white/10 transition cursor-pointer text-white/60 hover:text-white"
+            className="grid h-9 w-9 place-items-center rounded-2xl bg-white text-muted-foreground transition hover:text-secondary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-secondary/20 cursor-pointer"
             aria-label="Copy room code"
           >
-            {copied ? <Check size={18} className="text-lime-400" /> : <Copy size={18} />}
+            {copied ? <Check size={19} className="text-primary" /> : <Copy size={19} />}
           </button>
         </div>
-        <div className="text-sm text-white/60 mb-4">
-          Host: <span className="text-lime-400">{hostName}</span><br />
-          Guest: <span className={guestName ? "text-cyan-400" : "text-white/30"}>{guestName ?? "Waiting…"}</span>
+        <div className={`mb-4 h-5 text-xs font-extrabold transition ${copied ? "text-primary opacity-100" : "text-muted-foreground opacity-0"}`} aria-live="polite">
+          Room code copied!
         </div>
-        {countdown !== null && <div className="text-5xl font-bold text-violet-400 mb-4">{countdown}</div>}
-        <button onClick={() => { playClickSmall(); onCancel(); }} className="text-white/50 text-sm hover:text-white/80 cursor-pointer">Cancel</button>
+        <div className="text-xs font-extrabold text-muted-foreground mb-4 leading-5">
+          Host: <span className="text-primary">{hostName}</span><br />
+          Ally: <span className={guestName ? "text-secondary" : "text-muted-foreground"}>{guestName ?? "Waiting…"}</span>
+        </div>
+        {countdown !== null && (
+          <div className="text-5xl font-heading text-accent mb-4 animate-pulse-soft">{countdown}</div>
+        )}
+        <button onClick={() => { playClickSmall(); onCancel(); }} className="cta cta-secondary w-full !py-2.5 text-xs">Cancel</button>
       </div>
     </div>
   );
@@ -92,9 +98,9 @@ export function GuestLobby({
 }) {
   const [code, setCode] = useState("");
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0b1a]/90 backdrop-blur">
-      <div className="bg-[#0e1021]/90 border border-white/10 rounded-2xl p-8 max-w-sm w-full mx-4 text-center">
-        <h2 className="text-xl font-bold text-white mb-2">Join Room</h2>
+    <div className="arcade-overlay fixed inset-0 z-50 flex items-center justify-center px-4">
+      <div className="arcade-card p-6 max-w-sm w-full text-center animate-rise">
+        <h2 className="title-gradient font-heading text-[clamp(30px,6vw,44px)] mb-2">Join room</h2>
         {status === "input" && (
           <>
             <input
@@ -103,23 +109,27 @@ export function GuestLobby({
               onKeyDown={(e) => { if (e.key === "Enter") onSubmitCode(code); }}
               placeholder="ROOM CODE"
               maxLength={6}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-center tracking-widest placeholder-white/30 focus:outline-none focus:border-violet-400 mb-3"
+              className="input-game mb-3 text-center text-sm tracking-[0.2em]"
             />
-            {errorMsg && <p className="text-rose-400 text-xs mb-2">{errorMsg}</p>}
-            <button onClick={() => { playClick(); onSubmitCode(code); }} className="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-2 rounded-lg transition cursor-pointer">Join</button>
-            <button onClick={() => { playClickSmall(); onCancel(); }} className="text-white/50 text-sm mt-3 hover:text-white/80 cursor-pointer">Back</button>
+            {errorMsg && <p className="text-destructive text-xs font-extrabold mb-2">{errorMsg}</p>}
+            <button onClick={() => { playClick(); onSubmitCode(code); }} className="cta w-full !py-3 text-sm">Join</button>
+            <button onClick={() => { playClickSmall(); onCancel(); }} className="cta cta-secondary mt-3 w-full !py-2.5 text-xs">Back</button>
           </>
         )}
-        {status === "connecting" && <p className="text-white/60">Connecting…</p>}
+        {status === "connecting" && (
+          <p className="text-muted-foreground text-sm font-extrabold animate-pulse-soft">Connecting…</p>
+        )}
         {status === "waiting" && (
           <>
-            <div className="text-sm text-white/60 mb-2">
-              Host: <span className="text-lime-400">{hostName ?? "—"}</span><br />
-              You: <span className="text-cyan-400">{guestName ?? "—"}</span>
+            <div className="text-xs font-extrabold text-muted-foreground mb-3 leading-5">
+              Host: <span className="text-primary">{hostName ?? "—"}</span><br />
+              You: <span className="text-secondary">{guestName ?? "—"}</span>
             </div>
-            {countdown !== null && <div className="text-5xl font-bold text-violet-400 mb-4">{countdown}</div>}
-            <p className="text-white/40 text-xs">Waiting for host…</p>
-            <button onClick={() => { playClickSmall(); onCancel(); }} className="text-white/50 text-sm mt-4 hover:text-white/80 cursor-pointer">Leave</button>
+            {countdown !== null && (
+              <div className="text-5xl font-heading text-accent mb-4 animate-pulse-soft">{countdown}</div>
+            )}
+            <p className="text-muted-foreground text-xs font-bold mb-4">Waiting for host…</p>
+            <button onClick={() => { playClickSmall(); onCancel(); }} className="cta cta-secondary w-full !py-2.5 text-xs">Leave</button>
           </>
         )}
       </div>

@@ -1,8 +1,17 @@
-import { useState } from "react";
-import { useLeaderboard } from "../hooks/useLeaderboard";
+import { useState, type ReactNode } from "react";
+import { BarChart3 } from "lucide-react";
 import { validateUsername, type StoredPlayer } from "../lib/player";
 import type { Player } from "../lib/supabase";
 import { playClick, playClickSmall } from "../lib/sounds";
+import Leaderboard from "./Leaderboard";
+
+function OverlayShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#0a0b14] px-4 py-4 sm:py-6">
+      {children}
+    </div>
+  );
+}
 
 export function SignInScreen({
   signIn,
@@ -14,6 +23,7 @@ export function SignInScreen({
   const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
   async function submit() {
     if (busy) return;
     const v = validateUsername(name);
@@ -23,28 +33,26 @@ export function SignInScreen({
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0b1a]/90 backdrop-blur">
-      <div className="bg-[#0e1021]/90 border border-white/10 rounded-2xl p-8 max-w-sm w-full mx-4">
-        <h2 className="text-2xl font-bold text-white text-center mb-2">Drift In</h2>
-        <p className="text-sm text-white/50 text-center mb-6">Choose a callsign.</p>
+    <OverlayShell>
+      <div className="arcade-card w-full max-w-sm p-7 text-center">
+        <div className="mb-2 font-heading text-[46px] font-extrabold leading-none tracking-tight text-white">Xeno Drift</div>
+        <p className="mb-8 text-sm text-muted-foreground">Pick a username</p>
         <input
           value={name}
           onChange={(e) => { setName(e.target.value); setErr(null); }}
           onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-          placeholder="Callsign (3–16)"
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:border-violet-400"
+          placeholder="USERNAME"
+          className="input-game text-center tracking-[0.1em] mb-3"
+          autoFocus
         />
-        {err && <p className="text-rose-400 text-xs mt-2">{err}</p>}
-        <button
-          onClick={() => { playClick(); submit(); }}
-          disabled={busy}
-          className="mt-4 w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2 rounded-lg transition cursor-pointer"
-        >
-          {busy ? "Entering…" : "Enter Arena"}
+        {err && <p className="text-destructive text-sm mb-2">{err}</p>}
+        <button onClick={() => { playClick(); submit(); }} disabled={busy} className="cta w-full">
+          {busy ? "..." : "Start"}
         </button>
       </div>
-    </div>
+    </OverlayShell>
   );
 }
 
@@ -53,97 +61,119 @@ export function StartScreen({
   onStart,
   onMultiplayer,
   onSignOut,
+  onLeaderboard,
 }: {
   player: StoredPlayer & Partial<Player>;
   onStart: () => void;
   onMultiplayer: () => void;
   onSignOut: () => void;
+  onLeaderboard: () => void;
 }) {
-  const { entries, loading, refresh } = useLeaderboard();
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#0a0b1a]/80 backdrop-blur-sm p-8 md:p-12">
-      <div className="flex flex-col md:flex-row w-full max-w-5xl h-full md:h-auto items-center md:items-stretch gap-8">
-        {/* Left: title + buttons */}
-        <div className="flex flex-col items-center justify-center flex-1">
-          <div className="flex flex-col items-center">
-            <h1 className="text-5xl md:text-6xl font-bold text-white tracking-tight text-center leading-tight">
+    <OverlayShell>
+      <main className="scrollbar-game grid max-h-[94vh] w-full max-w-6xl grid-cols-1 items-start gap-6 overflow-y-auto px-2 text-center lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] lg:overflow-hidden">
+        <section className="flex min-w-0 flex-col items-center lg:min-h-[620px] lg:justify-center">
+          <div className="mb-5 sm:mb-6">
+            <div className="mb-3 font-heading text-[clamp(40px,9vw,78px)] font-extrabold leading-none tracking-tight text-white">
               Xeno Drift
-            </h1>
-            <p className="text-white/50 text-sm mt-3 mb-8 text-center">Co-op arena shooter</p>
-            <div className="flex flex-col gap-4 w-full max-w-xs">
-              <button onClick={() => { playClick(); onStart(); }} className="w-full bg-lime-500 hover:bg-lime-400 text-[#0b0c1a] font-bold py-3.5 rounded-xl transition cursor-pointer text-lg tracking-wide">Practice</button>
-              <button onClick={() => { playClick(); onMultiplayer(); }} className="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-3.5 rounded-xl transition cursor-pointer text-lg tracking-wide">Play with a Friend</button>
-              <button onClick={() => { playClickSmall(); onSignOut(); }} className="w-full bg-white/10 hover:bg-white/20 text-white font-medium py-2.5 rounded-xl transition cursor-pointer">Sign Out</button>
             </div>
+            <p className="mx-auto max-w-lg text-sm font-semibold leading-6 text-[#F8FAFC]/75 sm:text-base sm:leading-7">
+              Survive alien waves, grab powerups, and keep drifting.
+            </p>
           </div>
-        </div>
 
-        {/* Right: leaderboard */}
-        <div className="flex flex-col items-center justify-center flex-1">
-          <div className="w-full max-w-xs">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs uppercase tracking-widest text-white/60">Leaderboard</h3>
-              <button onClick={() => { playClickSmall(); refresh(); }} className="text-[10px] text-lime-400 hover:text-lime-300 cursor-pointer">Refresh</button>
-            </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-              {loading ? (
-                <div className="p-4 text-center text-white/40 text-xs">Loading...</div>
-              ) : entries.length === 0 ? (
-                <div className="p-4 text-center text-white/40 text-xs">No scores yet</div>
-              ) : (
-                <div className="max-h-64 overflow-y-auto">
-                  {entries.map((e, i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-2 text-sm border-b border-white/5 last:border-0">
-                      <span className="text-white/80 font-mono">{i + 1}. {e.username}</span>
-                      <span className="text-lime-400 font-mono">{e.kills}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="mb-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-bold text-[#F8FAFC]/80 sm:mb-6 sm:text-sm">
+            <span>Pilot <strong className="font-heading text-primary">{player.username}</strong></span>
+            <span>Best <strong className="font-heading text-accent">{player.best_score || 0}</strong></span>
+            <span>Wave <strong className="font-heading text-secondary">{player.best_wave || 1}</strong></span>
           </div>
+
+          <div className="flex w-full max-w-xs flex-col gap-3 sm:max-w-sm">
+            <button onClick={() => { playClick(); onStart(); }} className="cta w-full !py-3 text-base sm:text-[17px]">Solo Flight</button>
+            <button onClick={() => { playClick(); onMultiplayer(); }} className="cta cta-secondary w-full !py-3 text-base sm:text-[17px]">Co-op Battle</button>
+            <button
+              onClick={() => { playClickSmall(); onLeaderboard(); }}
+              className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl px-5 py-2.5 font-heading text-xs font-extrabold uppercase tracking-wide text-[#F8FAFC]/80 transition duration-200 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
+            >
+              <BarChart3 size={17} aria-hidden="true" /> Full leaderboard
+            </button>
+            <button onClick={() => { playClickSmall(); onSignOut(); }} className="cursor-pointer text-center text-[11px] font-bold uppercase tracking-wider text-[#F8FAFC]/55 transition duration-200 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary">
+              Sign out
+            </button>
+          </div>
+        </section>
+
+        <section className="min-h-[260px] w-full min-w-0 overflow-hidden px-1 pb-2 sm:min-h-[320px] lg:h-[min(620px,86vh)] lg:self-center lg:px-0 lg:pb-0">
+          <Leaderboard variant="home" currentUsername={player.username} />
+        </section>
+      </main>
+    </OverlayShell>
+  );
+}
+
+export function LeaderboardScreen({ onBack, currentUsername }: { onBack: () => void; currentUsername?: string }) {
+  return (
+    <OverlayShell>
+      <div className="flex h-[min(760px,92vh)] w-full max-w-3xl flex-col overflow-hidden p-1 sm:p-2">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div className="min-w-0 text-left">
+            <h1 className="truncate font-heading text-2xl font-extrabold leading-tight text-white sm:text-3xl">Leaderboard</h1>
+            <p className="mt-1 text-sm font-semibold text-muted-foreground">All-time scores and recent combat runs.</p>
+          </div>
+          <button onClick={() => { playClickSmall(); onBack(); }} className="cta cta-secondary shrink-0 px-5 py-2.5 text-sm">
+            Back
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <Leaderboard variant="full" currentUsername={currentUsername} />
         </div>
       </div>
-    </div>
+    </OverlayShell>
   );
 }
 
 export function PauseScreen({ onResume, onMenu }: { onResume: () => void; onMenu: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0b1a]/70 backdrop-blur">
-      <div className="text-center flex flex-col items-center gap-4">
-        <h2 className="text-2xl font-bold text-white">Paused</h2>
-        <button onClick={() => { playClick(); onResume(); }} className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-lg transition cursor-pointer w-48">Resume</button>
-        <button onClick={() => { playClickSmall(); onMenu(); }} className="bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 px-6 py-2 rounded-lg transition cursor-pointer w-48 text-sm">Exit to Menu</button>
+    <OverlayShell>
+      <div className="arcade-card w-72 p-8 text-center">
+        <div className="font-heading text-4xl mb-7">Paused</div>
+        <div className="flex flex-col gap-3">
+          <button onClick={() => { playClick(); onResume(); }} className="cta">Resume</button>
+          <button onClick={() => { playClickSmall(); onMenu(); }} className="cta cta-secondary">Menu</button>
+        </div>
       </div>
-    </div>
+    </OverlayShell>
   );
 }
 
 export function GameOverScreen({
   result,
-  partnerScore,
   onMenu,
+  onRetry,
+  partnerScore,
+  bestScore,
+  isNewBest,
 }: {
-  result: { score: number; wave: number; kills: number };
-  partnerScore?: number;
+  result: { score: number; wave: number };
   onMenu: () => void;
+  onRetry?: () => void;
+  partnerScore?: number;
+  bestScore?: number;
+  isNewBest?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0b1a]/90 backdrop-blur">
-      <div className="bg-[#0e1021]/90 border border-white/10 rounded-2xl p-8 max-w-sm w-full mx-4 text-center">
-        <h2 className="text-3xl font-bold text-white mb-2">Match Over</h2>
-        <p className="text-white/60 text-sm mb-1">
-          Wave <span className="text-white font-mono">{result.wave}</span>
-        </p>
-        <p className="text-white/60 text-sm mb-4">
-          You: <span className="text-white font-mono text-lg">{result.kills}</span>
-          {partnerScore !== undefined && (
-            <> · Partner: <span className="text-white font-mono text-lg">{partnerScore}</span></>
-          )}
-        </p>
-        <button onClick={() => { playClick(); onMenu(); }} className="w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2 rounded-lg transition cursor-pointer">Back to Menu</button>
+    <OverlayShell>
+      <div className="arcade-card w-72 p-7 text-center">
+        <div className="font-heading text-3xl mb-1">Game Over</div>
+        {isNewBest && <div className="mb-2 text-xs font-extrabold uppercase tracking-wider text-accent">New best run</div>}
+        <div className="text-[56px] tabular-nums font-heading text-primary mt-0 mb-3">{result.score}</div>
+        <div className="text-sm mb-2 text-muted-foreground">Wave {result.wave}{partnerScore !== undefined ? " • Ally " + partnerScore : ""}</div>
+        {bestScore !== undefined && <div className="mb-6 text-xs font-bold text-muted-foreground">Best: {bestScore.toLocaleString()}</div>}
+        <div className="flex flex-col gap-2">
+          {onRetry && <button onClick={() => { playClick(); onRetry(); }} className="cta">Retry</button>}
+          <button onClick={() => { playClickSmall(); onMenu(); }} className="cta cta-secondary">Menu</button>
+        </div>
       </div>
-    </div>
+    </OverlayShell>
   );
 }
