@@ -16,8 +16,10 @@ import {
 import type { GameEngine, PublicState } from "./game/engine";
 import {
   clearStoredPlayer,
-  loadStoredPlayer,
-  signInOrCreate,
+  ensurePlayerForUser,
+  getSessionPlayer,
+  signInWithGoogle,
+  signOutPlayer,
   submitGameResult,
   type StoredPlayer,
   type GameResult,
@@ -107,21 +109,46 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const stored = loadStoredPlayer();
-    if (!stored) {
-      setHydrating(false);
-      return;
-    }
-    supabase
-      .from("players")
-      .select("*")
-      .eq("id", stored.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) setPlayer({ ...stored, ...(data as Player) });
-        else setPlayer(stored);
-        setHydrating(false);
+    let cancelled = false;
+
+    getSessionPlayer()
+      .then((sessionPlayer) => {
+        if (!cancelled) setPlayer(sessionPlayer);
+      })
+      .catch((error) => {
+        console.error("auth hydration failed", error);
+        clearStoredPlayer();
+        if (!cancelled) setPlayer(null);
+      })
+      .finally(() => {
+        if (!cancelled) setHydrating(false);
       });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        clearStoredPlayer();
+        setPlayer(null);
+        setHydrating(false);
+        return;
+      }
+
+      ensurePlayerForUser(session.user)
+        .then((sessionPlayer) => {
+          if (!cancelled) setPlayer(sessionPlayer);
+        })
+        .catch((error) => {
+          console.error("player sync failed", error);
+          if (!cancelled) setPlayer(null);
+        })
+        .finally(() => {
+          if (!cancelled) setHydrating(false);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -210,14 +237,17 @@ export default function App() {
   }, []);
 
 
-  const handleSignIn = useCallback(async (username: string) => {
-    const p = await signInOrCreate(username);
-    setPlayer(p);
-    return p;
+  const handleSignIn = useCallback(async () => {
+    await signInWithGoogle();
   }, []);
 
-  const handleSignOut = useCallback(() => {
-    clearStoredPlayer();
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOutPlayer();
+    } catch (e) {
+      console.error(e);
+      clearStoredPlayer();
+    }
     setPlayer(null);
     setResult(null);
     setScreen("playing");

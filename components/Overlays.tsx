@@ -1,55 +1,57 @@
 import { useState, type ReactNode } from "react";
 import { BarChart3 } from "lucide-react";
-import { validateUsername, type StoredPlayer } from "../lib/player";
+import Google from "./Google";
+import type { StoredPlayer } from "../lib/player";
 import type { Player } from "../lib/supabase";
 import { playClick, playClickSmall } from "../lib/sounds";
 import Leaderboard from "./Leaderboard";
 
 function OverlayShell({ children }: { children: ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#0a0b14] px-4 py-4 sm:py-6">
-      {children}
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-[#0a0b14] px-4">
+      <div className="flex min-h-dvh w-full items-start justify-center py-5 sm:items-center sm:py-6">
+        {children}
+      </div>
     </div>
   );
 }
 
 export function SignInScreen({
   signIn,
-  onSignedIn,
 }: {
-  signIn: (u: string) => Promise<unknown>;
-  onSignedIn: () => void;
+  signIn: () => Promise<unknown>;
+  onSignedIn?: () => void;
 }) {
-  const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit() {
     if (busy) return;
-    const v = validateUsername(name);
-    if (!v.ok) { setErr(v.error); return; }
-    setBusy(true); setErr(null);
-    try { await signIn(v.value); onSignedIn(); }
-    catch (e) { setErr((e as Error).message); }
-    finally { setBusy(false); }
+    setBusy(true);
+    setErr(null);
+    try {
+      await signIn();
+    } catch (e) {
+      setErr((e as Error).message || "Google sign-in failed. Please try again.");
+      setBusy(false);
+    }
   }
 
   return (
     <OverlayShell>
       <div className="arcade-card w-full max-w-sm p-7 text-center">
         <div className="mb-2 font-heading text-[46px] font-extrabold leading-none tracking-tight text-white">Xeno Drift</div>
-        <p className="mb-8 text-sm text-muted-foreground">Pick a username</p>
-        <input
-          value={name}
-          onChange={(e) => { setName(e.target.value); setErr(null); }}
-          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-          placeholder="USERNAME"
-          className="input-game text-center tracking-[0.1em] mb-3"
-          autoFocus
-        />
-        {err && <p className="text-destructive text-sm mb-2">{err}</p>}
-        <button onClick={() => { playClick(); submit(); }} disabled={busy} className="cta w-full">
-          {busy ? "..." : "Start"}
+        <p className="mb-7 text-sm leading-6 text-muted-foreground">
+          Sign in securely to protect your pilot name and leaderboard scores.
+        </p>
+        {err && <p className="mb-3 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{err}</p>}
+        <button
+          onClick={() => { playClick(); submit(); }}
+          disabled={busy}
+          className="cta flex w-full items-center justify-center gap-3 !py-3 text-base"
+        >
+          <Google />
+          {busy ? "Opening Google..." : "Sign in with Google"}
         </button>
       </div>
     </OverlayShell>
@@ -71,8 +73,8 @@ export function StartScreen({
 }) {
   return (
     <OverlayShell>
-      <main className="scrollbar-game grid max-h-[94vh] w-full max-w-6xl grid-cols-1 items-start gap-6 overflow-y-auto px-2 text-center lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] lg:overflow-hidden">
-        <section className="flex min-w-0 flex-col items-center lg:min-h-[620px] lg:justify-center">
+      <main className="scrollbar-game grid w-full max-w-6xl grid-cols-1 items-start gap-6 px-2 pb-8 text-center lg:max-h-[94vh] lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] lg:overflow-hidden lg:pb-0">
+        <section className="flex min-w-0 flex-col items-center pt-3 lg:min-h-[620px] lg:justify-center lg:pt-0">
           <div className="mb-5 sm:mb-6">
             <div className="mb-3 font-heading text-[clamp(40px,9vw,78px)] font-extrabold leading-none tracking-tight text-white">
               Xeno Drift
@@ -103,7 +105,7 @@ export function StartScreen({
           </div>
         </section>
 
-        <section className="min-h-[260px] w-full min-w-0 overflow-hidden px-1 pb-2 sm:min-h-[320px] lg:h-[min(620px,86vh)] lg:self-center lg:px-0 lg:pb-0">
+        <section className="min-h-[320px] w-full min-w-0 overflow-hidden px-1 pb-2 sm:min-h-[320px] lg:h-[min(620px,86vh)] lg:self-center lg:px-0 lg:pb-0">
           <Leaderboard variant="home" currentUsername={player.username} />
         </section>
       </main>

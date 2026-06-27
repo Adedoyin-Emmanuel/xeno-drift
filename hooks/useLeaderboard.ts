@@ -24,7 +24,7 @@ export function useLeaderboard() {
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
-      .from("players")
+      .from("leaderboard_entries")
       .select("username,total_kills,games_played,best_score")
       .order("total_kills", { ascending: false })
       .limit(20);
@@ -49,7 +49,7 @@ export function useLeaderboard() {
       .channel("lb-poll")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "players" },
+        { event: "*", schema: "public", table: "leaderboard_entries" },
         () => load()
       )
       .subscribe();
