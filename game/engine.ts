@@ -107,11 +107,14 @@ export class GameEngine {
   private mode: EngineMode = "solo";
   private partnerName = "";
   private snapshotCd = 0;
-  private snapshotInterval = 1 / 15;
+  private snapshotInterval = 1 / 30;
   private tick = 0;
   private snap: CoopSnapshot | null = null;
+  private prevSnap: CoopSnapshot | null = null;
+  private snapReceivedAt = 0;
+  private prevSnapReceivedAt = 0;
+  private lastGuestAudioSnap: CoopSnapshot | null = null;
   private guestDashLatched = false;
-
   private layers: { arr: { x: number; y: number; r: number; tw: number }[]; sp: number; a: number }[] = [];
   
   // Dynamic Space Planet Themes
@@ -227,6 +230,10 @@ export class GameEngine {
 
   setMuted(m: boolean) { this.muted = m; this.emit(); }
   isMuted() { return this.muted; }
+  primeAudio() {
+    this.ensureAudio();
+    if (this.actx && this.actx.state === "suspended") this.actx.resume().catch(() => {});
+  }
   requestDash() {
     if (this.state !== "playing") return;
     if (this.mode === "guest") this.guestDashLatched = true;
@@ -275,10 +282,18 @@ export class GameEngine {
   }
 
   applySnapshot(s: CoopSnapshot) {
+    const now = performance.now();
+    if (this.snap) {
+      this.prevSnap = this.snap;
+      this.prevSnapReceivedAt = this.snapReceivedAt || now;
+    }
     this.snap = s;
+    this.snapReceivedAt = now;
+
     this.state = s.state;
-    this.muted = s.muted;
     if (s.state === "playing") {
+      this.primeAudio();
+      this.playGuestSnapshotAudio(s);
       this.cb.onDuckMusic?.(true);
     } else if (s.state === "over" || s.state === "menu") {
       this.cb.onDuckMusic?.(false);
@@ -377,6 +392,39 @@ export class GameEngine {
     this.tone(210, 0.16, "sawtooth", 0.055, 320);
   }
 
+  private countEnemiesInSnapshot(s: CoopSnapshot) {
+    return Math.floor(s.enemies.length / 9);
+  }
+
+  private countPlayerBulletsInSnapshot(s: CoopSnapshot) {
+    let count = 0;
+    for (let i = 0; i < s.bullets.length; i += 6) {
+      if (s.bullets[i + 5] !== 2) count++;
+    }
+    return count;
+  }
+
+  private playGuestSnapshotAudio(s: CoopSnapshot) {
+    if (this.muted || s.state !== "playing") {
+      this.lastGuestAudioSnap = s;
+      return;
+    }
+    const prev = this.lastGuestAudioSnap;
+    this.lastGuestAudioSnap = s;
+    if (!prev) return;
+
+    const prevPlayerBullets = this.countPlayerBulletsInSnapshot(prev);
+    const nextPlayerBullets = this.countPlayerBulletsInSnapshot(s);
+    if (nextPlayerBullets > prevPlayerBullets) this.playShotSound(false);
+
+    const prevEnemies = this.countEnemiesInSnapshot(prev);
+    const nextEnemies = this.countEnemiesInSnapshot(s);
+    if (nextEnemies < prevEnemies) this.playEnemyObliteratedSound();
+
+    if (s.host.hp < prev.host.hp || s.guest.hp < prev.guest.hp) {
+      this.noise(0.12, 0.06, 1000);
+    }
+  }
   private noise(dur = 0.25, vol = 0.16, cut = 1400) {
     if (this.muted || !this.actx) return;
     const t = this.actx.currentTime;
@@ -1103,36 +1151,40 @@ export class GameEngine {
     const p0 = this.players[0];
     const p1 = this.players[1] ?? p0;
     const bullets: number[] = [];
-    for (const b of this.bullets) bullets.push(b.x, b.y, b.vx, b.vy, b.r, b.owner);
+    for (const b of this.bullets) bullets.push(this.round1(b.x), this.round1(b.y), this.round1(b.vx), this.round1(b.vy), this.round1(b.r), b.owner);
     const enemies: number[] = [];
     for (const e of this.enemies) {
       if (!e.alive) continue;
       const kindNum = e.kind === "mothership" ? 2 : e.kind === "elite" ? 1 : 0;
-      enemies.push(e.x, e.y, e.r, e.hp, e.maxhp, e.hue, e.aim, e.alive ? 1 : 0, kindNum);
+      enemies.push(this.round1(e.x), this.round1(e.y), this.round1(e.r), this.round1(e.hp), this.round1(e.maxhp), this.round1(e.hue), this.round3(e.aim), e.alive ? 1 : 0, kindNum);
     }
     return {
       state: this.state,
       score: p0.score,
       opponentScore: p1.score,
-      hp: p0.hp,
+      hp: this.round1(p0.hp),
       maxHp: p0.maxhp,
-      dashCd: p0.dashCd,
+      dashCd: this.round2(p0.dashCd),
       dashMax: p0.dashMax,
       muted: this.muted,
       wave: this.wave,
       enemies,
       host: {
-        x: p0.x, y: p0.y, aim: p0.aim, alive: p0.alive,
-        hp: p0.hp, maxHp: p0.maxhp, dashCd: p0.dashCd, dashMax: p0.dashMax, score: p0.score, kills: p0.kills,
+        x: this.round1(p0.x), y: this.round1(p0.y), aim: this.round3(p0.aim), alive: p0.alive,
+        hp: this.round1(p0.hp), maxHp: p0.maxhp, dashCd: this.round2(p0.dashCd), dashMax: p0.dashMax, score: p0.score, kills: p0.kills,
       },
       guest: {
-        x: p1.x, y: p1.y, aim: p1.aim, alive: p1.alive,
-        hp: p1.hp, maxHp: p1.maxhp, dashCd: p1.dashCd, dashMax: p1.dashMax, score: p1.score, kills: p1.kills,
+        x: this.round1(p1.x), y: this.round1(p1.y), aim: this.round3(p1.aim), alive: p1.alive,
+        hp: this.round1(p1.hp), maxHp: p1.maxhp, dashCd: this.round2(p1.dashCd), dashMax: p1.dashMax, score: p1.score, kills: p1.kills,
       },
       bullets,
       W: this.W, H: this.H, tick: this.tick,
     };
   }
+
+  private round1(v: number) { return Math.round(v * 10) / 10; }
+  private round2(v: number) { return Math.round(v * 100) / 100; }
+  private round3(v: number) { return Math.round(v * 1000) / 1000; }
 
   private burst(x: number, y: number, hue: number, count: number, spread: number, speed: number) {
     for (let i = 0; i < count; i++) {
@@ -1514,10 +1566,21 @@ export class GameEngine {
     }
   }
 
+  private lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
+
+  private snapshotAlpha() {
+    if (!this.snap || !this.prevSnap) return 1;
+    const interval = Math.max(16, this.snapReceivedAt - this.prevSnapReceivedAt);
+    return clamp((performance.now() - this.snapReceivedAt) / interval, 0, 1);
+  }
+
   private renderFromSnapshot(dt: number) {
     const s = this.snap;
     this.drawBackground(dt);
     if (!s) return;
+    const prev = this.prevSnap;
+    const alpha = this.snapshotAlpha();
+    const extrap = Math.min(Math.max(0, (performance.now() - this.snapReceivedAt) / 1000), 0.09);
     const ctx = this.ctx;
     const sx = this.W / Math.max(1, s.W);
     const sy = this.H / Math.max(1, s.H);
@@ -1527,25 +1590,45 @@ export class GameEngine {
     ctx.save(); ctx.translate(offX, offY); ctx.scale(scale, scale);
 
     for (let i = 0; i < s.enemies.length; i += 9) {
-      const ex = s.enemies[i], ey = s.enemies[i + 1], er = s.enemies[i + 2];
+      const exNow = s.enemies[i], eyNow = s.enemies[i + 1], er = s.enemies[i + 2];
       const ehp = s.enemies[i + 3], emaxhp = s.enemies[i + 4], ehue = s.enemies[i + 5];
       const eaim = s.enemies[i + 6], ealive = s.enemies[i + 7] === 1, ekind = s.enemies[i + 8];
       if (!ealive) continue;
+      const exPrev = prev?.enemies[i] ?? exNow;
+      const eyPrev = prev?.enemies[i + 1] ?? eyNow;
       const kindStr = ekind === 2 ? "mothership" as const : ekind === 1 ? "elite" as const : "grunt" as const;
       const tempEnemy: Enemy = {
-        x: ex, y: ey, vx: 0, vy: 0, r: er, hp: ehp, maxhp: emaxhp,
-        hue: ehue, shootCd: 0, fireRate: 1, aim: eaim, alive: true, wob: 0, kind: kindStr,
+        x: this.lerp(exPrev, exNow, alpha), y: this.lerp(eyPrev, eyNow, alpha), vx: 0, vy: 0, r: er, hp: ehp, maxhp: emaxhp,
+        hue: ehue, shootCd: 0, fireRate: 1, aim: eaim, alive: true, wob: performance.now() / 350, kind: kindStr,
       };
       this.drawEnemy(tempEnemy);
     }
 
     for (let i = 0; i < s.bullets.length; i += 6) {
-      const bx = s.bullets[i], by = s.bullets[i + 1], bvx = s.bullets[i + 2], bvy = s.bullets[i + 3], br = s.bullets[i + 4], owner = s.bullets[i + 5] as 0 | 1 | 2;
+      const bxNow = s.bullets[i], byNow = s.bullets[i + 1], bvx = s.bullets[i + 2], bvy = s.bullets[i + 3], br = s.bullets[i + 4], owner = s.bullets[i + 5] as 0 | 1 | 2;
+      const bxPrev = prev?.bullets[i] ?? bxNow;
+      const byPrev = prev?.bullets[i + 1] ?? byNow;
+      const bx = this.lerp(bxPrev, bxNow, alpha) + bvx * extrap;
+      const by = this.lerp(byPrev, byNow, alpha) + bvy * extrap;
       this.drawBullet({ x: bx, y: by, vx: bvx, vy: bvy, r: br, life: 1, owner });
     }
 
-    const hP = { ...makePlayer(84), x: s.host.x, y: s.host.y, aim: s.host.aim, alive: s.host.alive, hue: 84 };
-    const gP = { ...makePlayer(200), x: s.guest.x, y: s.guest.y, aim: s.guest.aim, alive: s.guest.alive, hue: 200 };
+    const hP = {
+      ...makePlayer(84),
+      x: this.lerp(prev?.host.x ?? s.host.x, s.host.x, alpha),
+      y: this.lerp(prev?.host.y ?? s.host.y, s.host.y, alpha),
+      aim: s.host.aim,
+      alive: s.host.alive,
+      hue: 84,
+    };
+    const gP = {
+      ...makePlayer(200),
+      x: this.lerp(prev?.guest.x ?? s.guest.x, s.guest.x, alpha),
+      y: this.lerp(prev?.guest.y ?? s.guest.y, s.guest.y, alpha),
+      aim: s.guest.aim,
+      alive: s.guest.alive,
+      hue: 200,
+    };
     if (s.state === "playing" || s.state === "over") {
       this.drawPlayer(hP);
       this.drawPlayer(gP);

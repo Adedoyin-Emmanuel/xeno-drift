@@ -172,7 +172,14 @@ export async function getSessionPlayer(): Promise<Player | null> {
   return ensurePlayerForUser(data.session.user);
 }
 
-export type GameResult = { score: number; wave: number; kills: number };
+export type GameResult = {
+  score: number;
+  wave: number;
+  kills: number;
+  matchMode?: "solo" | "coop";
+  partnerUsername?: string | null;
+  roomCode?: string | null;
+};
 
 /**
  * Submit a game result: insert a score row + update the authenticated player's aggregate stats.
@@ -193,6 +200,10 @@ export async function submitGameResult(player: StoredPlayer, result: GameResult)
 
   if (!current) return null;
 
+  const matchMode = result.matchMode === "coop" ? "coop" : "solo";
+  const partnerUsername = result.partnerUsername?.trim() || null;
+  const roomCode = result.roomCode?.trim().toUpperCase() || null;
+
   const { error: scoreErr } = await supabase.from("scores").insert({
     player_id: current.id,
     username: current.username,
@@ -201,16 +212,22 @@ export async function submitGameResult(player: StoredPlayer, result: GameResult)
     score: result.score,
     wave: result.wave,
     kills: result.kills,
+    match_mode: matchMode,
+    coop_partner_username: matchMode === "coop" ? partnerUsername : null,
+    room_code: matchMode === "coop" ? roomCode : null,
   });
   if (scoreErr) {
     console.error("score insert failed", scoreErr);
   }
 
+  const isNewBest = result.score >= current.best_score;
   const update = {
     best_score: Math.max(current.best_score, result.score),
     best_wave: Math.max(current.best_wave, result.wave),
     total_kills: current.total_kills + result.kills,
     games_played: current.games_played + 1,
+    best_match_mode: isNewBest ? matchMode : current.best_match_mode,
+    best_coop_partner_username: isNewBest && matchMode === "coop" ? partnerUsername : current.best_coop_partner_username,
   };
   const { data: updated, error: updateErr } = await supabase
     .from("players")

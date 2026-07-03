@@ -57,6 +57,12 @@ const INITIAL_STATE: PublicState = {
 
 function loadBestScore(): number {
   try {
+    const resetMarker = "2026-06-27";
+    if (localStorage.getItem("xenoDriftResetMarker") !== resetMarker) {
+      localStorage.setItem("xenoDriftResetMarker", resetMarker);
+      localStorage.removeItem("xenoDriftBest");
+      return 0;
+    }
     const raw = localStorage.getItem("xenoDriftBest");
     return raw ? parseInt(raw, 10) || 0 : 0;
   } catch {
@@ -92,9 +98,10 @@ export default function App() {
   const guestHandleRef = useRef<GuestHandle | null>(null);
   const inputPumpRef = useRef<number | null>(null);
   const guestNameRef = useRef<string | null>(null);
+  const hostNameRef = useRef<string | null>(null);
   const countdownStartedRef = useRef(false);
   const modeRef = useRef<"solo" | "host" | "guest">("solo");
-
+  const guestResultSavedRef = useRef(false);
   useEffect(() => {
     const syncRoute = () => {
       const isLeaderboardRoute = window.location.pathname === "/leaderboard";
@@ -164,12 +171,22 @@ export default function App() {
 
   const handleGameOver = useCallback(
     async (r: GameResult) => {
-      setResult(r);
+      const enrichedResult: GameResult =
+        modeRef.current === "host"
+          ? {
+              ...r,
+              matchMode: "coop",
+              partnerUsername: guestNameRef.current,
+              roomCode,
+            }
+          : { ...r, matchMode: "solo" };
+
+      setResult(enrichedResult);
       // Track best score locally
       const current = loadBestScore();
-      if (r.score > current) {
-        saveBestScore(r.score);
-        setBestScore(r.score);
+      if (enrichedResult.score > current) {
+        saveBestScore(enrichedResult.score);
+        setBestScore(enrichedResult.score);
         setIsNewBest(true);
       } else {
         setBestScore(current);
@@ -179,7 +196,7 @@ export default function App() {
       if (modeRef.current === "host" || modeRef.current === "solo") {
         setSavingResult(true);
         try {
-          const updated = await submitGameResult(player, r);
+          const updated = await submitGameResult(player, enrichedResult);
           if (updated) setPlayer({ ...player, ...updated });
         } catch (e) {
           console.error(e);
@@ -188,7 +205,7 @@ export default function App() {
         }
       }
     },
-    [player]
+    [player, roomCode]
   );
 
   const handleSnapshot = useCallback((s: CoopSnapshot) => {
@@ -199,6 +216,7 @@ export default function App() {
   const handlePractice = useCallback(() => {
     setResult(null);
     setIsNewBest(false);
+    guestResultSavedRef.current = false;
     setMode("solo");
     modeRef.current = "solo";
     engineRef.current?.setMode("solo", "");
@@ -270,6 +288,7 @@ export default function App() {
           setScreen("playing");
           setResult(null);
           setIsNewBest(false);
+          guestResultSavedRef.current = false;
           const gName = guestNameRef.current ?? "";
           engineRef.current?.setMode("host", gName);
           modeRef.current = "host";
@@ -326,9 +345,11 @@ export default function App() {
       try {
         const handle = await joinGuestRoom(code, {
           onWelcome: (hName) => {
+            hostNameRef.current = hName;
             setHostName(hName);
             setGuestStatus("waiting");
             engineRef.current?.setMode("guest", hName);
+            engineRef.current?.primeAudio();
           },
           onSnapshot: (s) => {
             setScreen((cur) =>
@@ -336,11 +357,26 @@ export default function App() {
             );
             engineRef.current?.applySnapshot(s);
             if (s.state === "over") {
-              const r = { score: s.guest.score, wave: s.wave, kills: s.guest.score };
+              const r: GameResult = {
+                score: s.guest.score,
+                wave: s.wave,
+                kills: s.guest.kills,
+                matchMode: "coop",
+                partnerUsername: hostNameRef.current,
+                roomCode: code,
+              };
               setResult(r);
               const current = loadBestScore();
               if (r.score > current) { saveBestScore(r.score); setBestScore(r.score); setIsNewBest(true); }
               else { setBestScore(current); setIsNewBest(false); }
+              if (player && !guestResultSavedRef.current) {
+                guestResultSavedRef.current = true;
+                setSavingResult(true);
+                submitGameResult(player, r)
+                  .then((updated) => { if (updated) setPlayer({ ...player, ...updated }); })
+                  .catch((e) => console.error(e))
+                  .finally(() => setSavingResult(false));
+              }
             }
           },
           onCountdown: (v) => setCountdown(v),
@@ -357,6 +393,7 @@ export default function App() {
         setGuestName(player.username);
         setHostName(null);
         setCountdown(null);
+        guestResultSavedRef.current = false;
         engineRef.current?.setMode("guest", "");
         handle.send({ type: "hello", username: player.username });
         setGuestStatus("waiting");
@@ -387,6 +424,7 @@ export default function App() {
     setRoomCode(null);
     setHostName(null);
     setGuestName(null);
+    hostNameRef.current = null;
     guestNameRef.current = null;
     countdownStartedRef.current = false;
     setCountdown(null);
@@ -409,7 +447,7 @@ export default function App() {
       if (!eng || !handle) return;
       const i = eng.consumeLocalInput();
       handle.send({ type: "input", i: { mvx: i.mvx, mvy: i.mvy, dash: i.dash, aim: i.aim, fire: true, ts: Date.now() } });
-    }, 33);
+    }, 50);
     inputPumpRef.current = id;
     return () => {
       window.clearInterval(id);

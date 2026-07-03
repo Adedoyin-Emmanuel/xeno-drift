@@ -23,6 +23,8 @@ export type Player = {
   best_wave: number;
   total_kills: number;
   games_played: number;
+  best_match_mode?: "solo" | "coop";
+  best_coop_partner_username?: string | null;
 };
 
 export type ScoreRow = {
@@ -34,5 +36,8 @@ export type ScoreRow = {
   score: number;
   wave: number;
   kills: number;
+  match_mode?: "solo" | "coop";
+  coop_partner_username?: string | null;
+  room_code?: string | null;
   created_at: string;
 };

@@ -20,3 +20,7 @@ export function formatCompactNumber(value: number | null | undefined): string {
   const formatted = scaled.toFixed(decimals).replace(/\.0$/, "");
   return `${sign}${formatted}${unit.suffix}`;
 }
+
+export function formatPoints(value: number | null | undefined): string {
+  return `${formatCompactNumber(value)} PT`;
+}

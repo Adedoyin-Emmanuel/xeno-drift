@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { Medal, Radio, Shield, Trophy, Zap } from "lucide-react";
-import { formatCompactNumber } from "../lib/format";
+import { Medal, Radio, Shield, Trophy, UserRound, UsersRound, Zap } from "lucide-react";
+import { formatCompactNumber, formatPoints } from "../lib/format";
 type TopEntry = {
   id?: string;
   username: string;
@@ -10,6 +10,8 @@ type TopEntry = {
   best_score: number;
   best_wave: number;
   games_played: number;
+  best_match_mode?: "solo" | "coop" | null;
+  best_coop_partner_username?: string | null;
 };
 type RecentEntry = {
   id: string;
@@ -20,6 +22,9 @@ type RecentEntry = {
   score: number;
   wave: number;
   kills: number;
+  match_mode?: "solo" | "coop" | null;
+  coop_partner_username?: string | null;
+  room_code?: string | null;
   created_at: string;
 };
 
@@ -78,6 +83,27 @@ function YouBadge() {
   );
 }
 
+function MatchModeBadge({ mode, partnerUsername, compact = false }: { mode?: "solo" | "coop" | null; partnerUsername?: string | null; compact?: boolean }) {
+  const isCoop = mode === "coop";
+  const Icon = isCoop ? UsersRound : UserRound;
+  const label = isCoop ? "Co-op" : "Solo";
+  const title = isCoop && partnerUsername ? `Co-op with ${partnerUsername}` : label;
+
+  return (
+    <span
+      title={title}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 font-heading text-[9px] font-extrabold uppercase tracking-wider ${
+        isCoop
+          ? "border-secondary/45 bg-secondary/15 text-secondary"
+          : "border-white/10 bg-white/5 text-muted-foreground"
+      }`}
+    >
+      <Icon size={compact ? 9 : 10} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
 export default function Leaderboard({ variant = "full", currentUsername }: LeaderboardProps) {
   const [topEntries, setTopEntries] = useState<TopEntry[]>([]);
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
@@ -91,7 +117,7 @@ export default function Leaderboard({ variant = "full", currentUsername }: Leade
     try {
       const { data: topData, error: topError } = await supabase
         .from("leaderboard_entries")
-        .select("username, display_name, avatar_url, best_score, best_wave, games_played")
+        .select("username, display_name, avatar_url, best_score, best_wave, games_played, best_match_mode, best_coop_partner_username")
         .gt("games_played", 0)
         .order("best_score", { ascending: false })
         .limit(isHome ? 10 : 30);
@@ -100,7 +126,7 @@ export default function Leaderboard({ variant = "full", currentUsername }: Leade
       if (!isHome) {
         const { data: recentData, error: recentError } = await supabase
           .from("scores")
-          .select("id, player_id, username, display_name, avatar_url, score, wave, kills, created_at")
+          .select("id, player_id, username, display_name, avatar_url, score, wave, kills, match_mode, coop_partner_username, room_code, created_at")
           .order("created_at", { ascending: false })
           .limit(30);
         if (recentError) console.error("Error loading recent scores:", recentError);
@@ -116,6 +142,8 @@ export default function Leaderboard({ variant = "full", currentUsername }: Leade
             best_score: x.best_score ?? 0,
             best_wave: x.best_wave ?? 1,
             games_played: x.games_played ?? 0,
+            best_match_mode: x.best_match_mode ?? "solo",
+            best_coop_partner_username: x.best_coop_partner_username ?? null,
           }))
         );
       }
@@ -153,14 +181,14 @@ export default function Leaderboard({ variant = "full", currentUsername }: Leade
   const topList = (
     <section className="flex min-h-0 flex-col overflow-hidden" aria-label="All-time leaderboard">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.16em] text-[#F8FAFC]/70">
+        <div className="flex min-w-0 items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#F8FAFC]/70 sm:text-[11px]">
           <Trophy size={15} className="shrink-0 text-accent" aria-hidden="true" />
-          <span className="truncate">All-time leaderboard</span>
+          <span className="truncate">Leaderboard</span>
         </div>
         {!isHome && <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Best scores</span>}
       </div>
 
-      <div className={`scrollbar-game min-h-0 overflow-y-auto pr-1 ${isHome ? "max-h-[min(52vh,480px)] lg:max-h-[min(68vh,560px)]" : "max-h-[calc(100vh-260px)]"}`}>
+      <div className={`scrollbar-game min-h-0 overflow-y-auto pr-1 ${isHome ? "max-h-[360px]" : "max-h-[calc(100vh-300px)]"}`}>
         {topEntries.length === 0 ? (
           <div className="px-2 py-10 text-center text-xs font-semibold text-muted-foreground">
             No records yet. Be the first pilot on the board.
@@ -184,14 +212,15 @@ export default function Leaderboard({ variant = "full", currentUsername }: Leade
                         <span className="truncate font-heading text-sm font-bold leading-tight text-white">{displayName(p)}</span>
                         {you && <YouBadge />}
                       </div>
-                      <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
+                      <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
                         <span className="flex shrink-0 items-center gap-1"><Shield size={11} className="text-secondary" aria-hidden="true" /> Wave {p.best_wave}</span>
+                        <MatchModeBadge mode={p.best_match_mode} partnerUsername={p.best_coop_partner_username} compact={isHome} />
                         {!isHome && <span className="truncate">{p.games_played} runs</span>}
                       </div>
                     </div>
                   </div>
                   <div className="max-w-[96px] truncate text-right font-heading text-sm font-extrabold tabular-nums text-accent sm:max-w-none" title={p.best_score.toLocaleString()}>
-                    {formatCompactNumber(p.best_score)}
+                    {formatPoints(p.best_score)}
                   </div>
                 </div>
               );
@@ -233,11 +262,14 @@ export default function Leaderboard({ variant = "full", currentUsername }: Leade
                         <span className="truncate font-heading text-sm font-bold leading-tight text-white">{displayName(score)}</span>
                         {you && <YouBadge />}
                       </div>
-                      <div className="mt-0.5 text-[10px] font-bold text-muted-foreground">{formatTimeAgo(score.created_at)}</div>
+                      <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] font-bold text-muted-foreground">
+                        <span>{formatTimeAgo(score.created_at)}</span>
+                        <MatchModeBadge mode={score.match_mode} partnerUsername={score.coop_partner_username} compact />
+                      </div>
                     </div>
                   </div>
                   <div className="min-w-[76px] text-right">
-                    <div className="truncate font-heading text-sm font-extrabold tabular-nums text-secondary" title={score.score.toLocaleString()}>{formatCompactNumber(score.score)}</div>
+                    <div className="truncate font-heading text-sm font-extrabold tabular-nums text-secondary" title={`${score.score.toLocaleString()} PT`}>{formatPoints(score.score)}</div>
                     <div className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
                       <span>W{score.wave}</span>
                       <span>•</span>
